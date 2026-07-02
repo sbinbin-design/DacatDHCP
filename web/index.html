@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DacatDHCP</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 标题 -->
+        <div class="header">
+            <h1>DacatDHCP</h1>
+            <span class="version">V1</span>
+        </div>
+
+        <!-- 安全提示 -->
+        <div class="warning-box">
+            安全提示：本工具仅用于直连、测试网络或隔离网络，禁止在已有 DHCP 服务的生产网络中启用。
+        </div>
+
+        <!-- 服务状态 -->
+        <div class="section">
+            <h2>服务状态</h2>
+            <div class="status-row">
+                <span class="status-label">状态：</span>
+                <span id="service-status" class="status-stopped">已停止</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">服务端 IP：</span>
+                <span id="server-ip">-</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">地址池：</span>
+                <span id="pool-info">-</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">已分配 / 总数：</span>
+                <span id="pool-usage">- / -</span>
+            </div>
+            <div id="error-msg" class="error-msg" style="display:none;"></div>
+            <div class="btn-row">
+                <button id="btn-start" onclick="startService()">启动服务</button>
+                <button id="btn-stop" onclick="stopService()" disabled>停止服务</button>
+            </div>
+        </div>
+
+        <!-- 网卡与地址池配置 -->
+        <div class="section">
+            <h2>网卡与地址池配置</h2>
+            <div class="form-group">
+                <label for="adapter-select">服务网卡：</label>
+                <select id="adapter-select">
+                    <option value="">-- 请选择网卡 --</option>
+                </select>
+                <span id="adapter-info" class="adapter-info"></span>
+            </div>
+            <div class="form-group">
+                <label for="pool-start">起始 IP：</label>
+                <input type="text" id="pool-start" placeholder="192.168.1.100">
+            </div>
+            <div class="form-group">
+                <label for="pool-end">结束 IP：</label>
+                <input type="text" id="pool-end" placeholder="192.168.1.200">
+            </div>
+            <div class="form-group">
+                <label for="lease-time">租约时间（分钟）：</label>
+                <input type="number" id="lease-time" value="60" min="1">
+            </div>
+        </div>
+
+        <!-- 当前租约 -->
+        <div class="section">
+            <h2>当前租约</h2>
+            <div class="table-wrap">
+                <table id="lease-table">
+                    <thead>
+                        <tr>
+                            <th>IP 地址</th>
+                            <th>MAC 地址</th>
+                            <th>主机名</th>
+                            <th>分配时间</th>
+                            <th>到期时间</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lease-body">
+                        <tr><td colspan="6" class="empty-msg">暂无租约</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 运行日志 -->
+        <div class="section">
+            <h2>运行日志</h2>
+            <div id="log-box" class="log-box"></div>
+        </div>
+
+        <div class="footer">DacatDHCP V1 - Windows 便携式轻量 DHCP 服务工具</div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

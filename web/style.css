@@ -1,0 +1,226 @@
+/* DacatDHCP V1 样式 - IE11 兼容 */
+
+* {
+    margin: 0;
+    padding: 0;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Microsoft YaHei", "Segoe UI", Tahoma, sans-serif;
+    font-size: 14px;
+    color: #333;
+    background: #f0f2f5;
+    line-height: 1.5;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #1890ff;
+    padding-bottom: 8px;
+}
+
+.header h1 {
+    display: inline;
+    font-size: 24px;
+    color: #1890ff;
+}
+
+.version {
+    display: inline-block;
+    background: #1890ff;
+    color: #fff;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.warning-box {
+    background: #fff7e6;
+    border: 1px solid #ffd591;
+    color: #ad6800;
+    padding: 10px 14px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.section {
+    background: #fff;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+.section h2 {
+    font-size: 16px;
+    color: #1890ff;
+    border-bottom: 1px solid #e8e8e8;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+}
+
+.status-row {
+    margin-bottom: 6px;
+}
+
+.status-label {
+    font-weight: bold;
+    color: #666;
+    display: inline-block;
+    width: 110px;
+}
+
+.status-running {
+    color: #52c41a;
+    font-weight: bold;
+}
+
+.status-stopped {
+    color: #999;
+    font-weight: bold;
+}
+
+.error-msg {
+    background: #fff2f0;
+    border: 1px solid #ffccc7;
+    color: #cf1322;
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin: 8px 0;
+    font-size: 13px;
+}
+
+.btn-row {
+    margin-top: 12px;
+}
+
+button {
+    padding: 8px 24px;
+    font-size: 14px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 8px;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#btn-start {
+    background: #1890ff;
+    color: #fff;
+}
+
+#btn-start:hover:not(:disabled) {
+    background: #40a9ff;
+}
+
+#btn-stop {
+    background: #ff4d4f;
+    color: #fff;
+}
+
+#btn-stop:hover:not(:disabled) {
+    background: #ff7875;
+}
+
+.form-group {
+    margin-bottom: 10px;
+}
+
+.form-group label {
+    display: inline-block;
+    width: 150px;
+    font-weight: bold;
+    color: #666;
+    vertical-align: middle;
+}
+
+.form-group select,
+.form-group input {
+    padding: 6px 10px;
+    border: 1px solid #d9d9d9;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 250px;
+    vertical-align: middle;
+}
+
+.form-group select:focus,
+.form-group input:focus {
+    border-color: #1890ff;
+    outline: none;
+}
+
+.adapter-info {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 12px;
+    color: #999;
+    vertical-align: middle;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th, td {
+    padding: 8px 10px;
+    border: 1px solid #e8e8e8;
+    text-align: left;
+}
+
+th {
+    background: #fafafa;
+    font-weight: bold;
+    color: #666;
+    white-space: nowrap;
+}
+
+.empty-msg {
+    text-align: center;
+    color: #999;
+    padding: 20px;
+}
+
+.log-box {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 10px;
+    border-radius: 4px;
+    height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.footer {
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    margin-top: 8px;
+    padding: 8px 0;
+}
