@@ -252,6 +252,7 @@ func main() {
 		os.Exit(1)
 	}
 	app.PostInit()
+	app.SetIsAdmin(isAdmin()) // V10新增: 注入真实管理员权限状态,前端底部栏禁止伪造
 
 	// 4. 启动 HTTP 服务器
 	if err := app.Start(); err != nil {

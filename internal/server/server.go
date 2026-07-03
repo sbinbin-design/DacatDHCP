@@ -47,7 +47,28 @@ type AppServer struct {
 	httpSrv        *http.Server
 	closing        bool   // V2: 退出过程中拒绝新的 Web API 操作
 	onStatusChange func() // V3: DHCP 状态变化时回调（用于更新托盘 Tooltip）
+	isAdmin        bool   // V10新增: 进程是否以管理员权限运行(由 main 注入),前端底部栏展示真实权限状态
+	// V16新增测试钩子: 非 nil 时覆盖默认的临时文件写入逻辑(Write/Sync/Close)
+	// 仅测试使用,生产代码不得设置
+	testSaveConfigWriter saveConfigWriter
+	// V16新增测试钩子: 非 nil 时覆盖默认的文件替换逻辑(Rename)
+	// 仅测试使用,生产代码不得设置
+	testSaveConfigReplacer saveConfigReplacer
+	// V15新增测试钩子: 非 nil 时 handleStart/handleConfig 使用此函数查找网卡,绕过真实网卡枚举
+	// 仅测试使用,生产代码不得设置
+	testFindAdapterFunc func(name string) (net.IP, net.IPMask, error)
 }
+
+// V16新增: saveConfigWriter 是可注入的"写入临时文件并关闭"函数类型
+// dir 为配置目录,data 为序列化后的配置数据
+// 返回临时文件路径和可能的错误
+// 测试可注入此函数模拟 Write/Sync/Close 失败
+type saveConfigWriter func(dir string, data []byte) (tmpPath string, err error)
+
+// V16新增: saveConfigReplacer 是可注入的"替换正式文件"函数类型
+// tmpPath 为临时文件路径,configPath 为正式配置文件路径
+// 测试可注入此函数模拟 Rename 失败
+type saveConfigReplacer func(tmpPath, configPath string) error
 
 // NewAppServer 创建应用服务器
 func NewAppServer(dataDir string, webFS fs.FS) (*AppServer, error) {
@@ -103,6 +124,9 @@ func (a *AppServer) Start() error {
 	mux.HandleFunc("/", a.handleIndex)
 	mux.HandleFunc("/style.css", a.handleStatic("style.css", "text/css"))
 	mux.HandleFunc("/app.js", a.handleStatic("app.js", "application/javascript"))
+	// 新增: 国际化资源与主题管理脚本路由,通过 embed 编译进单 EXE
+	mux.HandleFunc("/i18n.js", a.handleStatic("i18n.js", "application/javascript"))
+	mux.HandleFunc("/theme.js", a.handleStatic("theme.js", "application/javascript"))
 	mux.HandleFunc("/favicon.ico", a.handleStatic("dhcp.ico", "image/x-icon")) // V1修复: Web favicon
 
 	// API 路由
@@ -113,6 +137,7 @@ func (a *AppServer) Start() error {
 	mux.HandleFunc("/api/status", a.handleStatus)
 	mux.HandleFunc("/api/leases", a.handleLeases)
 	mux.HandleFunc("/api/logs", a.handleLogs)
+	mux.HandleFunc("/api/logs/clear", a.handleLogsClear)         // V12新增: 清空内存环形缓冲区并截断日志文件
 	mux.HandleFunc("/api/pool-recommend", a.handlePoolRecommend) // V1修复: 后端计算地址池推荐
 	mux.HandleFunc("/api/version", a.handleVersion)              // 版本信息：读取 internal/version 唯一源
 
@@ -198,6 +223,14 @@ func (a *AppServer) SetOnStatusChange(f func()) {
 	a.onStatusChange = f
 }
 
+// SetIsAdmin V10新增: 注入进程管理员权限状态(由 main 在创建 AppServer 后调用)
+// 前端底部栏据此展示真实权限,禁止前端伪造
+func (a *AppServer) SetIsAdmin(v bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.isAdmin = v
+}
+
 // ClearOnStatusChange 清除状态变化回调
 // V5: 退出时先清回调再停 DHCP，避免托盘销毁后旧回调继续发送状态更新
 func (a *AppServer) ClearOnStatusChange() {
@@ -261,15 +294,16 @@ func (a *AppServer) handleStatic(name, contentType string) http.HandlerFunc {
 }
 
 // handleAdapters 处理网卡列表 API
+// V13: 错误统一使用 writeError 返回稳定 code
 func (a *AppServer) handleAdapters(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
 
 	adapters, err := network.EnumerateAdapters()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusInternalServerError, errCodeInternalError, err.Error())
 		return
 	}
 
@@ -277,6 +311,7 @@ func (a *AppServer) handleAdapters(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleConfig 处理配置 API
+// V13: 所有错误统一使用 writeError 返回稳定 code
 func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -290,13 +325,13 @@ func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		// 运行时禁止修改配置
 		if a.dhcpSrv.IsRunning() {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "服务运行中，无法修改配置"})
+			writeError(w, http.StatusBadRequest, errCodeServiceRunning, "服务运行中，无法修改配置")
 			return
 		}
 
 		var cfg Config
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "配置格式错误"})
+			writeError(w, http.StatusBadRequest, errCodeInvalidConfig, "配置格式错误")
 			return
 		}
 
@@ -307,7 +342,12 @@ func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		var adapterIP net.IP
 		var subnetMask net.IPMask
 		if cfg.AdapterName != "" {
-			adapterIP, subnetMask, _ = findAdapterIP(cfg.AdapterName)
+			// V15: 测试钩子优先,允许测试绕过真实网卡枚举
+			if a.testFindAdapterFunc != nil {
+				adapterIP, subnetMask, _ = a.testFindAdapterFunc(cfg.AdapterName)
+			} else {
+				adapterIP, subnetMask, _ = findAdapterIP(cfg.AdapterName)
+			}
 		}
 		// 解析地址池（缺失时跳过池内检查）
 		var poolStart, poolEnd net.IP
@@ -320,29 +360,49 @@ func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		// 复用统一校验函数（禁止重复编写判断逻辑）
 		_, err := validateGateway(adapterIP, subnetMask, cfg.Gateway, poolStart, poolEnd)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			// V13: 网关错误统一返回 invalid_gateway 或 gateway_in_pool
+			code := errCodeInvalidGateway
+			if strings.Contains(err.Error(), "地址池内") || strings.Contains(err.Error(), "地址池范围") {
+				code = errCodeGatewayInPool
+			}
+			writeError(w, http.StatusBadRequest, code, err.Error())
 			return
 		}
 		dnsIPs, err := normalizeDNSServers(cfg.DNSServers)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			// V14: DNS 数量超限使用独立错误码 dns_too_many,其他 DNS 错误用 invalid_dns
+			dnsCode := errCodeInvalidDNS
+			if strings.Contains(err.Error(), "最多允许 3 个") {
+				dnsCode = errCodeDNSTooMany
+			}
+			writeError(w, http.StatusBadRequest, dnsCode, err.Error())
 			return
 		}
 		cfg.DNSServers = ipSliceToStrings(dnsIPs)
 
+		// V14: 先保存配置到文件,成功后再更新内存配置,禁止写入失败仍更新内存或返回 ok
+		// 临时设置 a.config 供 saveConfig 序列化,失败则恢复原值
+		oldConfig := a.config
 		a.config = cfg
-		a.saveConfig()
+		if err := a.saveConfig(); err != nil {
+			// 保存失败,恢复内存配置,返回 config_save_failed
+			a.config = oldConfig
+			writeError(w, http.StatusInternalServerError, errCodeConfigSaveFailed, err.Error())
+			return
+		}
+		// 保存成功,内存配置已更新(上方 a.config = cfg)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 
 	default:
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 	}
 }
 
 // handleStart 处理启动 DHCP 服务
+// V13: 方法不允许统一使用 writeError
 func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
 
@@ -351,13 +411,13 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	// V2: 退出过程中拒绝新操作
 	if a.closing {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "服务正在关闭"})
+		writeError(w, http.StatusServiceUnavailable, errCodeServiceClosing, "服务正在关闭")
 		return
 	}
 
 	if a.dhcpSrv.IsRunning() {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "DHCP 服务已在运行"})
+		writeError(w, http.StatusBadRequest, errCodeServiceRunning, "DHCP 服务已在运行")
 		return
 	}
 
@@ -371,15 +431,28 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求格式错误"})
+		writeError(w, http.StatusBadRequest, errCodeInvalidRequest, "请求格式错误")
 		return
 	}
 
 	// 查找网卡的 IP 和子网掩码
-	adapterIP, subnetMask, err := findAdapterIP(req.AdapterName)
-	if err != nil {
+	// V11新增: 使用 findAdapterIPWithCode 返回稳定错误码
+	// V15: 测试钩子优先,允许测试绕过真实网卡枚举
+	var adapterIP net.IP
+	var subnetMask net.IPMask
+	var adapterCode string
+	var findErr error
+	if a.testFindAdapterFunc != nil {
+		adapterIP, subnetMask, findErr = a.testFindAdapterFunc(req.AdapterName)
+		if findErr != nil {
+			adapterCode = errCodeAdapterNotFound
+		}
+	} else {
+		adapterIP, subnetMask, adapterCode, findErr = findAdapterIPWithCode(req.AdapterName)
+	}
+	if findErr != nil {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeError(w, http.StatusBadRequest, adapterCode, findErr.Error())
 		return
 	}
 
@@ -391,13 +464,23 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	gatewayIP, err := validateGateway(adapterIP, subnetMask, req.Gateway, poolStart, poolEnd)
 	if err != nil {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		// V13: 网关错误统一返回 invalid_gateway 或 gateway_in_pool,禁止空 code
+		code := errCodeInvalidGateway
+		if strings.Contains(err.Error(), "地址池内") || strings.Contains(err.Error(), "地址池范围") {
+			code = errCodeGatewayInPool
+		}
+		writeError(w, http.StatusBadRequest, code, err.Error())
 		return
 	}
 	dnsIPs, err := normalizeDNSServers(req.DNSServers)
 	if err != nil {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		// V14: DNS 数量超限使用独立错误码 dns_too_many,其他 DNS 错误用 invalid_dns
+		dnsCode := errCodeInvalidDNS
+		if strings.Contains(err.Error(), "最多允许 3 个") {
+			dnsCode = errCodeDNSTooMany
+		}
+		writeError(w, http.StatusBadRequest, dnsCode, err.Error())
 		return
 	}
 
@@ -405,18 +488,45 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	// V2新增: 传入网关/DNS（已校验），为空则不下发 Option 3/6
 	if err := a.dhcpSrv.Start(req.AdapterName, adapterIP, subnetMask, poolStart, poolEnd, req.LeaseMinutes, gatewayIP, dnsIPs); err != nil {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		// V11新增: 按 dhcpSrv.Start 错误内容映射稳定错误码
+		// V13: 未匹配的错误统一返回 internal_error,禁止空 code
+		msg := err.Error()
+		code := errCodeInternalError
+		if strings.Contains(msg, "最大支持") || strings.Contains(msg, "地址池过大") {
+			code = errCodePoolTooLarge
+		} else if strings.Contains(msg, "包含服务端 IP") || strings.Contains(msg, "包含网络地址") || strings.Contains(msg, "包含广播地址") {
+			code = errCodePoolSpecialAddr
+		} else if strings.Contains(msg, "起始地址不能大于结束地址") {
+			code = errCodePoolOrderInvalid
+		} else if strings.Contains(msg, "绑定 UDP 67") {
+			code = errCodeBindPort67
+		}
+		writeError(w, http.StatusBadRequest, code, msg)
 		return
 	}
 
 	// 更新并保存配置（V2新增: 保存网关和规范化后的 DNS）
+	// V14: saveConfig 失败时 DHCP 已启动,必须明确返回错误码 config_save_failed
+	// 禁止前端只收到普通启动失败而误判服务状态(实际服务已启动)
 	a.config.AdapterName = req.AdapterName
 	a.config.PoolStart = req.PoolStart
 	a.config.PoolEnd = req.PoolEnd
 	a.config.LeaseMinutes = req.LeaseMinutes
 	a.config.Gateway = strings.TrimSpace(req.Gateway)
 	a.config.DNSServers = ipSliceToStrings(dnsIPs)
-	a.saveConfig()
+	if saveErr := a.saveConfig(); saveErr != nil {
+		a.mu.Unlock()
+		// 服务已启动但配置保存失败,日志记录并返回明确错误码
+		a.logger.Log("DHCP 已启动但保存配置失败: %v", saveErr)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok":               true,
+			"config_save_fail": true,
+			"code":             errCodeConfigSaveFailed,
+			"error":            saveErr.Error(),
+		})
+		a.notifyStatusChange()
+		return
+	}
 
 	// V4: 释放锁后再触发状态通知和返回 HTTP 响应，避免递归加锁
 	a.mu.Unlock()
@@ -427,9 +537,10 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 
 // handleStop 处理停止 DHCP 服务
 // V6: 禁止持有 a.mu 调用 dhcpSrv.Stop()（Stop 内部等待协程退出，可能触发回调死锁）
+// V13: 方法不允许统一使用 writeError
 func (a *AppServer) handleStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
 
@@ -437,14 +548,14 @@ func (a *AppServer) handleStop(w http.ResponseWriter, r *http.Request) {
 	// V2: 退出过程中拒绝新操作
 	if a.closing {
 		a.mu.Unlock()
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "服务正在关闭"})
+		writeError(w, http.StatusServiceUnavailable, errCodeServiceClosing, "服务正在关闭")
 		return
 	}
 	running := a.dhcpSrv.IsRunning()
 	a.mu.Unlock()
 
 	if !running {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "DHCP 服务未运行"})
+		writeError(w, http.StatusBadRequest, errCodeServiceNotRunning, "DHCP 服务未运行")
 		return
 	}
 
@@ -456,9 +567,10 @@ func (a *AppServer) handleStop(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStatus 处理服务状态 API
+// V13: 方法不允许统一使用 writeError
 func (a *AppServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
 
@@ -467,9 +579,10 @@ func (a *AppServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLeases 处理租约列表 API
+// V13: 方法不允许统一使用 writeError
 func (a *AppServer) handleLeases(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
 
@@ -481,9 +594,10 @@ func (a *AppServer) handleLeases(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLogs 处理日志 API
+// V13: 方法不允许统一使用 writeError
 func (a *AppServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
 
@@ -494,29 +608,68 @@ func (a *AppServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"logs": logs})
 }
 
+// handleLogsClear V12新增: 清空日志接口
+// 调用 Logger.Clear 在互斥锁内清空内存环形缓冲区并截断当前日志文件
+// 成功后前端立即刷新日志,禁止只清空前端 DOM 被下一次轮询恢复
+func (a *AppServer) handleLogsClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
+		return
+	}
+
+	a.mu.RLock()
+	closing := a.closing
+	a.mu.RUnlock()
+	if closing {
+		writeError(w, http.StatusServiceUnavailable, errCodeServiceClosing, "服务正在关闭")
+		return
+	}
+
+	if err := a.logger.Clear(); err != nil {
+		writeError(w, http.StatusInternalServerError, errCodeInternalError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // handlePoolRecommend 处理地址池推荐 API
 // V1修复: 直接调用 RecommendPool 生产函数
+// V13: 方法不允许统一使用 writeError
 func (a *AppServer) handlePoolRecommend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
 
 	adapterName := r.URL.Query().Get("adapter_name")
 	if adapterName == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "缺少网卡名称"})
+		writeError(w, http.StatusBadRequest, errCodeMissingAdapter, "缺少网卡名称")
 		return
 	}
 
-	adapterIP, subnetMask, err := findAdapterIP(adapterName)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	// V11新增: 使用 findAdapterIPWithCode 返回稳定错误码
+	// V15: 测试钩子优先,允许测试绕过真实网卡枚举
+	var adapterIP net.IP
+	var subnetMask net.IPMask
+	var adapterCode string
+	var findErr error
+	if a.testFindAdapterFunc != nil {
+		adapterIP, subnetMask, findErr = a.testFindAdapterFunc(adapterName)
+		if findErr != nil {
+			adapterCode = errCodeAdapterNotFound
+		}
+	} else {
+		adapterIP, subnetMask, adapterCode, findErr = findAdapterIPWithCode(adapterName)
+	}
+	if findErr != nil {
+		writeError(w, http.StatusBadRequest, adapterCode, findErr.Error())
 		return
 	}
 
 	poolStart, poolEnd, err := RecommendPool(adapterIP, subnetMask)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		// V13: 推荐失败统一返回 internal_error,禁止直接 writeJSON error
+		writeError(w, http.StatusBadRequest, errCodeInternalError, err.Error())
 		return
 	}
 
@@ -528,17 +681,31 @@ func (a *AppServer) handlePoolRecommend(w http.ResponseWriter, r *http.Request) 
 
 // handleVersion 处理版本信息 API
 // 读取 internal/version 唯一源，前端不得再次硬编码版本号
+// V13: 方法不允许统一使用 writeError
 func (a *AppServer) handleVersion(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
 		return
 	}
+	a.mu.RLock()
+	admin := a.isAdmin
+	a.mu.RUnlock()
+	// V10新增: 返回真实管理员权限状态,前端底部栏禁止伪造
 	writeJSON(w, http.StatusOK, map[string]string{
 		"version":      version.Version(),
 		"file_version": version.FileVersion(),
 		"product_name": version.ProductName(),
 		"copyright":    version.Copyright(),
+		"is_admin":     boolStr(admin),
 	})
+}
+
+// boolStr V10新增: 布尔值转字符串,供 version 接口返回 is_admin
+func boolStr(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 // RecommendPool 根据服务端 IP 和子网掩码计算推荐地址池
@@ -660,7 +827,9 @@ func normalizeDNSServers(input []string) ([]net.IP, error) {
 		return nil, nil // 合法：不下发 Option 6
 	}
 	if len(result) > 3 {
-		return nil, fmt.Errorf("DNS 服务器最多允许 3 个，当前 %d 个", len(result))
+		// V14: 使用独立错误前缀 dns_too_many 便于调用方映射稳定错误码
+		// 不再在消息中嵌入"当前N个"动态参数,前端按 code 提供完整中英文文案
+		return nil, fmt.Errorf("DNS 服务器最多允许 3 个")
 	}
 	var ips []net.IP
 	for _, s := range result {
@@ -711,22 +880,113 @@ func ipSliceToStrings(ips []net.IP) []string {
 }
 
 // saveConfig 保存配置到文件
-func (a *AppServer) saveConfig() {
+// V14修复: 返回 error,调用方据决定是否更新内存配置或返回错误
+// V16重构: 使用 os.CreateTemp 创建唯一临时文件,依次执行 Write/Sync/Close 后再替换正式文件
+// 任何步骤失败都关闭并清理临时文件,保证原 config.json 不被破坏
+// 注: Windows 上 os.Rename 不保证原子性,本方法尽力保证配置完整性(安全替换),
+//
+//	不宣称 Windows 下绝对原子
+func (a *AppServer) saveConfig() error {
 	configPath := filepath.Join(a.configDir, "config.json")
 	data, err := json.MarshalIndent(a.config, "", "  ")
 	if err != nil {
 		a.logger.Log("保存配置失败: %v", err)
-		return
+		return fmt.Errorf("序列化配置失败: %v", err)
 	}
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		a.logger.Log("写入配置文件失败: %v", err)
+
+	// V16: 使用可注入的写入函数,测试可模拟 Write/Sync/Close 失败
+	writer := a.testSaveConfigWriter
+	if writer == nil {
+		writer = defaultSaveConfigWriter
 	}
+	tmpPath, err := writer(a.configDir, data)
+	if err != nil {
+		a.logger.Log("写入临时配置文件失败: %v", err)
+		return fmt.Errorf("写入临时配置文件失败: %v", err)
+	}
+
+	// V16: 使用可注入的替换函数,测试可模拟 Rename 失败
+	replacer := a.testSaveConfigReplacer
+	if replacer == nil {
+		replacer = defaultSaveConfigReplacer
+	}
+	if err := replacer(tmpPath, configPath); err != nil {
+		// V17修复: 错误前缀由 saveConfig 统一包装,replacer 内部不再重复添加前缀
+		a.logger.Log("替换配置文件失败: %v", err)
+		// 替换失败时清理临时文件,保持目录整洁,原 config.json 不受影响
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("替换配置文件失败: %v", err)
+	}
+	return nil
+}
+
+// defaultSaveConfigWriter 默认的临时文件写入实现(安全替换/尽力保证完整性)
+// 使用 os.CreateTemp 在配置目录创建唯一临时文件,依次执行 Write/Sync/Close
+// 任何步骤失败都关闭并清理临时文件,返回错误
+func defaultSaveConfigWriter(dir string, data []byte) (string, error) {
+	// os.CreateTemp 在 dir 目录创建唯一临时文件,文件名前缀 config,自动生成随机后缀
+	f, err := os.CreateTemp(dir, "config.json.*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("创建临时文件失败: %v", err)
+	}
+	tmpPath := f.Name()
+
+	// 任何失败路径都需要关闭并清理临时文件
+	success := false
+	defer func() {
+		if !success {
+			// Close 幂等,多次调用安全;Remove 忽略错误
+			_ = f.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	// 步骤 1: Write
+	if _, err := f.Write(data); err != nil {
+		return tmpPath, fmt.Errorf("写入临时文件失败: %v", err)
+	}
+	// 步骤 2: Sync (尽量保证数据落盘)
+	if err := f.Sync(); err != nil {
+		return tmpPath, fmt.Errorf("同步临时文件失败: %v", err)
+	}
+	// 步骤 3: Close (关闭后再替换,避免文件句柄占用)
+	if err := f.Close(); err != nil {
+		return tmpPath, fmt.Errorf("关闭临时文件失败: %v", err)
+	}
+
+	success = true
+	return tmpPath, nil
+}
+
+// defaultSaveConfigReplacer 默认的文件替换实现(安全替换/尽力保证完整性)
+// 使用 os.Rename 替换正式配置文件
+// 注: Windows 上 os.Rename 不保证原子性,本方法尽力保证配置完整性
+// V17修复: 错误前缀由 saveConfig 统一包装,本函数直接返回 os.Rename 原始错误
+func defaultSaveConfigReplacer(tmpPath, configPath string) error {
+	return os.Rename(tmpPath, configPath)
 }
 
 // findAdapterIP 查找指定网卡的 IPv4 地址和子网掩码
 // V1修复: 统一使用 network.GetAdapterIPByName（共享 OperStatus 判断逻辑）
 func findAdapterIP(name string) (net.IP, net.IPMask, error) {
 	return network.GetAdapterIPByName(name)
+}
+
+// V11新增: findAdapterIPWithCode 返回稳定错误码,供前端按 code 翻译
+// 错误码: adapter_not_found / adapter_down / adapter_no_ipv4
+func findAdapterIPWithCode(name string) (net.IP, net.IPMask, string, error) {
+	ip, mask, err := network.GetAdapterIPByName(name)
+	if err != nil {
+		msg := err.Error()
+		code := errCodeAdapterNotFound
+		if strings.Contains(msg, "未连接") || strings.Contains(msg, "已禁用") {
+			code = errCodeAdapterDown
+		} else if strings.Contains(msg, "没有 IPv4") {
+			code = errCodeAdapterNoIPv4
+		}
+		return nil, nil, code, err
+	}
+	return ip, mask, "", nil
 }
 
 // ipToUint32 将 IPv4 转换为 uint32（服务器端辅助函数）
@@ -753,4 +1013,36 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+// V11新增: 稳定错误码常量,前端按 code 翻译,避免依赖中文片段匹配
+// 后端错误优先返回稳定 code,同时保留 msg 兼容旧前端
+// V13: 补齐 invalid_gateway/invalid_dns,所有 API 错误统一非空 code
+const (
+	errCodeMethodNotAllowed  = "method_not_allowed"
+	errCodeServiceRunning    = "service_running"
+	errCodeServiceNotRunning = "service_not_running"
+	errCodeServiceClosing    = "service_closing"
+	errCodeInvalidConfig     = "invalid_config"
+	errCodeInvalidRequest    = "invalid_request"
+	errCodeMissingAdapter    = "missing_adapter"
+	errCodeAdapterNotFound   = "adapter_not_found"
+	errCodeAdapterNoIPv4     = "adapter_no_ipv4"
+	errCodeAdapterDown       = "adapter_down"
+	errCodePoolTooLarge      = "pool_too_large"
+	errCodePoolSpecialAddr   = "pool_special_addr"
+	errCodePoolOrderInvalid  = "pool_order_invalid"
+	errCodeGatewayInPool     = "gateway_in_pool"
+	errCodeBindPort67        = "bind_port_67"
+	errCodeInternalError     = "internal_error"     // V12新增: 日志清空等内部错误
+	errCodeInvalidGateway    = "invalid_gateway"    // V13新增: 网关地址无效/非同子网/网络地址/广播地址
+	errCodeInvalidDNS        = "invalid_dns"        // V13新增: DNS 地址无效
+	errCodeDNSTooMany        = "dns_too_many"       // V14新增: DNS 数量超限(独立稳定码,前端完整文案)
+	errCodeConfigSaveFailed  = "config_save_failed" // V14新增: 配置写入文件失败
+)
+
+// writeError V11新增: 写入带稳定错误码的 JSON 响应
+// code 供前端按错误码翻译,msg 保留中文原文向后兼容
+func writeError(w http.ResponseWriter, status int, code, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg, "code": code})
 }

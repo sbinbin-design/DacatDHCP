@@ -24,6 +24,7 @@ type ServerStatus struct {
 	PoolTotal    int    `json:"pool_total"`
 	PoolUsed     int    `json:"pool_used"`
 	Error        string `json:"error"`
+	StartedAt    string `json:"started_at"` // V10新增: 服务启动时间(RFC3339),前端据此计算真实运行时间,停止时为空
 }
 
 // StopType 标识停止类型（V9: 替代文本比较，避免国际化/文案变化破坏判断）
@@ -76,6 +77,7 @@ type Server struct {
 	leases      *LeaseStore
 	logFunc     func(string, ...interface{})
 	statusErr   string
+	startedAt   time.Time // V10新增: 服务启动时间,供 Status 返回真实运行时间,禁止前端伪造
 
 	// V2修复: stopReqCh/stopDoneCh已移入runningInstance，旧实例不得关闭新实例通道
 
@@ -223,6 +225,7 @@ func (s *Server) Start(adapterName string, adapterIP net.IP, subnetMask net.IPMa
 	s.poolStart = poolStart.To4()
 	s.poolEnd = poolEnd.To4()
 	s.statusErr = ""
+	s.startedAt = time.Now() // V10新增: 记录真实启动时间,供前端计算运行时间
 
 	// V1修复: 启动协程，全部绑定本次实例
 	inst.wg.Add(5)
@@ -323,6 +326,7 @@ func (s *Server) doStop(inst *runningInstance, reason string, stopType StopType)
 	// 清理实例
 	s.instance = nil
 	s.stopping = false
+	s.startedAt = time.Time{} // V10新增: 清空启动时间,避免停止后残留
 
 	// V5: stopDoneCh 已移入 postLockFn，在 log 和 callback 之后关闭
 
@@ -390,6 +394,11 @@ func (s *Server) Status() ServerStatus {
 		AdapterName:  s.adapterName,
 		LeaseMinutes: int(s.leaseTime.Minutes()),
 		Error:        s.statusErr,
+	}
+
+	// V10新增: 仅运行中返回启动时间,停止时为空字符串
+	if s.instance != nil && !s.startedAt.IsZero() {
+		status.StartedAt = s.startedAt.Format(time.RFC3339)
 	}
 
 	if s.adapterIP != nil {

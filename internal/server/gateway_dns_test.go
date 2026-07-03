@@ -315,7 +315,10 @@ func TestConfig_SaveReloadGatewayDNS(t *testing.T) {
 		Gateway:      "192.168.1.254",
 		DNSServers:   []string{"8.8.8.8", "8.8.4.4"},
 	}
-	app.saveConfig()
+	// V15修复: 必须断言 saveConfig 返回值,禁止忽略错误
+	if err := app.saveConfig(); err != nil {
+		t.Fatalf("saveConfig 失败: %v", err)
+	}
 
 	// 从磁盘重新读取配置文件，验证字段一致
 	configPath := filepath.Join(app.configDir, "config.json")
@@ -351,7 +354,10 @@ func TestConfig_EmptyGatewayDNS(t *testing.T) {
 		Gateway:      "",
 		DNSServers:   nil,
 	}
-	app.saveConfig()
+	// V15修复: 必须断言 saveConfig 返回值,禁止忽略错误
+	if err := app.saveConfig(); err != nil {
+		t.Fatalf("saveConfig 失败: %v", err)
+	}
 
 	configPath := filepath.Join(app.configDir, "config.json")
 	data, err := os.ReadFile(configPath)

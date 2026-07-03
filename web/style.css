@@ -1,4 +1,7 @@
-/* DacatDHCP V1 样式 - IE11 兼容 */
+/* DacatDHCP 样式 - V10 重构 */
+/* 通过 CSS 变量统一管理浅色/深色主题,通过 <html data-theme> 切换 */
+/* V10: 宽屏使用 CSS Grid,列宽接近 25%/45%/30%;中屏两列;窄屏单列 */
+/* 不使用 overflow-x:hidden 掩盖布局问题,改用 min-width:0 与内部滚动 */
 
 * {
     margin: 0;
@@ -7,112 +10,798 @@
     box-sizing: border-box;
 }
 
+/* ---- 主题变量: 浅色(默认) ---- */
+/* V12: 背景调整为更接近白色的淡蓝灰,卡片圆角 10-12px,柔和阴影 */
+:root {
+    --bg-page: #f4f6f9;          /* V12: 淡蓝灰背景,接近白色 */
+    --bg-card: #ffffff;
+    --bg-input: #ffffff;
+    --bg-table-head: #fafbfc;
+    --bg-table-row-alt: #fafbfc;
+    --bg-log: #1e1e1e;
+    --color-text: #1f2937;        /* V12: 标题深色 */
+    --color-text-secondary: #4b5563;
+    --color-text-muted: #9ca3af;
+    --color-border: #e5e7eb;      /* V12: 浅边框 */
+    --color-border-strong: #d1d5db;
+    --color-primary: #2563eb;     /* V12: 主色调微调 */
+    --color-primary-hover: #3b82f6;
+    --color-danger: #ef4444;
+    --color-danger-hover: #f87171;
+    --color-success: #22c55e;
+    --color-warning-bg: #fffbeb;
+    --color-warning-border: #fde68a;
+    --color-warning-text: #92400e;
+    --color-warning-icon: #f59e0b;
+    --color-error-bg: #fef2f2;
+    --color-error-border: #fecaca;
+    --color-error-text: #b91c1c;
+    --color-btn-icon-bg: transparent;
+    --color-btn-icon-hover: #eff6ff;
+    --color-btn-mini-bg: #f9fafb;
+    --color-btn-mini-border: #e5e7eb;
+    --color-footer-bg: #ffffff;
+    --color-footer-border: #e5e7eb;
+    --color-footer-badge-bg: #f0fdf4;
+    --color-footer-badge-border: #bbf7d0;
+    --color-footer-badge-text: #15803d;
+    --color-shield: #22c55e;       /* V12: 底部盾牌绿色 */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06); /* V12: 更柔和阴影 */
+    --radius-card: 12px;           /* V12: 卡片圆角 10-12px */
+    --radius-input: 6px;           /* V12: 输入框圆角微调 */
+    --radius-btn: 6px;             /* V12: 按钮圆角微调 */
+    --gap-base: 16px;
+    --font-size-base: 14px;
+    --font-size-sm: 12px;
+    --font-size-lg: 16px;
+    --font-size-xl: 20px;
+}
+
+/* ---- 主题变量: 深色 ---- */
+/* V10: 完整深色主题覆盖页面/卡片/表单/表格/弹窗/日志/警告区/底部状态栏 */
+/* V12: 同步圆角和阴影变量,与浅色主题保持一致 */
+html[data-theme="dark"] {
+    --bg-page: #111827;          /* V12: 深蓝灰背景 */
+    --bg-card: #1f2937;
+    --bg-input: #374151;
+    --bg-table-head: #283241;
+    --bg-table-row-alt: #283241;
+    --bg-log: #0d0d0d;
+    --color-text: #f3f4f6;
+    --color-text-secondary: #cbd5e1;
+    --color-text-muted: #94a3b8;
+    --color-border: #374151;
+    --color-border-strong: #4b5563;
+    --color-primary: #3b82f6;
+    --color-primary-hover: #60a5fa;
+    --color-danger: #ef4444;
+    --color-danger-hover: #f87171;
+    --color-success: #22c55e;
+    --color-warning-bg: #2b2113;
+    --color-warning-border: #6b4c1a;
+    --color-warning-text: #fbbf24;
+    --color-warning-icon: #f59e0b;
+    --color-error-bg: #2a1614;
+    --color-error-border: #5c2a26;
+    --color-error-text: #fca5a5;
+    --color-btn-icon-bg: transparent;
+    --color-btn-icon-hover: #2a2a2a;
+    --color-btn-mini-bg: #374151;
+    --color-btn-mini-border: #4b5563;
+    --color-footer-bg: #1f2937;
+    --color-footer-border: #374151;
+    --color-footer-badge-bg: #16230f;
+    --color-footer-badge-border: #274916;
+    --color-footer-badge-text: #4ade80;
+    --color-shield: #22c55e;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4); /* V12: 柔和阴影 */
+}
+
+html {
+    /* 防止深色模式下页面闪白,theme.js 已在 head 中预先设置 data-theme */
+    background: var(--bg-page);
+}
+
 body {
     font-family: "Microsoft YaHei", "Segoe UI", Tahoma, sans-serif;
-    font-size: 14px;
-    color: #333;
-    background: #f0f2f5;
+    font-size: var(--font-size-base);
+    color: var(--color-text);
+    background: var(--bg-page);
     line-height: 1.5;
+    /* V10: 不使用 overflow-x:hidden 掩盖布局问题,依靠 min-width:0 与内部滚动控制溢出 */
 }
 
 .container {
-    max-width: 900px;
+    /* V13: 最大宽度由 1600px 调整到 1920px,2K 屏幕保持接近效果图的利用率,4K 屏幕居中限宽 */
+    max-width: 1920px;
     margin: 0 auto;
-    padding: 16px;
+    padding: clamp(8px, 1.5vw, 20px);
+    min-width: 0;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
+/* ---- 顶部品牌区 ---- */
+/* V11: 取消蓝色下边线 */
+/* V13: 删除横向下边框,依靠留白分隔 */
 .header {
-    text-align: center;
-    margin-bottom: 12px;
-    border-bottom: 2px solid #1890ff;
-    padding-bottom: 8px;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-pack: justify;
+    -ms-flex-pack: justify;
+    justify-content: space-between;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: var(--gap-base);
+    padding-bottom: 0;
+    border-bottom: none; /* V13: 删除横向下边框,依靠留白分隔 */
 }
 
+.brand {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+/* V11: 放大 Logo */
+/* V12: Logo 放大到 56px(54-58px 范围) */
+.brand-logo {
+    width: 56px;
+    height: 56px;
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+}
+
+.brand-text {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.brand-title-row {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: baseline;
+    -ms-flex-align: baseline;
+    align-items: baseline;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* V11: 放大品牌标题 */
+/* V12: 标题改为深色粗体(不再使用主色蓝色) */
 .header h1 {
-    display: inline;
-    font-size: 24px;
-    color: #1890ff;
+    font-size: 24px;            /* V12: 略放大 */
+    color: var(--color-text);   /* V12: 深色而非主色 */
+    font-weight: 700;           /* V12: 加粗 */
+}
+
+.brand-subtitle {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
 }
 
 .version {
     display: inline-block;
-    background: #1890ff;
+    background: var(--color-primary);
     color: #fff;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 2px 8px;
-    border-radius: 3px;
-    margin-left: 8px;
-    vertical-align: middle;
+    border-radius: var(--radius-input);
 }
 
-.warning-box {
-    background: #fff7e6;
-    border: 1px solid #ffd591;
-    color: #ad6800;
-    padding: 10px 14px;
-    border-radius: 4px;
-    margin-bottom: 12px;
-    font-size: 13px;
+.header-actions {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 6px;
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
 }
 
-.section {
-    background: #fff;
-    border: 1px solid #e8e8e8;
-    border-radius: 4px;
+/* 顶部图标按钮(主题/设置/关于) */
+/* V11: 取消外框,统一无背景样式 */
+.btn-icon {
+    background: transparent;
+    color: var(--color-text-secondary);
+    border: none;
+    border-radius: var(--radius-btn);
+    padding: 6px 10px;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    gap: 4px;
+    -webkit-transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn-icon:hover {
+    background: var(--color-btn-icon-hover);
+    color: var(--color-primary);
+}
+
+/* V11新增: 带文字的图标按钮(设置/关于) */
+.btn-with-text .btn-svg {
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+}
+
+/* V11重构: 语言切换改为无外框"中文｜EN" */
+.lang-seg {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+}
+
+.lang-seg-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    padding: 6px 4px;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    -webkit-transition: color 0.15s;
+    transition: color 0.15s;
+}
+
+.lang-seg-btn:hover {
+    color: var(--color-primary);
+}
+
+/* V11: 当前语言用主色高亮,不再使用背景填充 */
+.lang-seg-btn.active {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.lang-seg-sep {
+    color: var(--color-text-muted);
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* V10新增: 主题图标按钮,内联SVG,浅色显示月亮/深色显示太阳 */
+.btn-theme {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    padding: 6px;
+    line-height: 1;
+}
+
+.theme-icon {
+    display: none;
+}
+
+/* 浅色主题显示月亮(点击切深色);深色主题显示太阳(点击切浅色) */
+html[data-theme="light"] .icon-moon,
+html:not([data-theme]) .icon-moon {
+    display: block;
+}
+html[data-theme="dark"] .icon-sun {
+    display: block;
+}
+
+/* ---- 主内容布局: V10 CSS Grid ---- */
+/* 宽屏三列 25/45/30,左状态卡跨两行,中上配置中下租约,右上日志右下安全提示 */
+.layout {
+    display: grid;
+    grid-template-columns: minmax(0, 25fr) minmax(0, 45fr) minmax(0, 30fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+        "status config  logs"
+        "status leases  security";
+    gap: var(--gap-base);
+    -webkit-box-align: stretch;
+    -ms-flex-align: stretch;
+    align-items: stretch;
+    -webkit-box-flex: 1;
+    -ms-flex-positive: 1;
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.grid-area-status { grid-area: status; }
+.grid-area-config { grid-area: config; }
+.grid-area-leases { grid-area: leases; }
+.grid-area-logs { grid-area: logs; }
+.grid-area-security { grid-area: security; }
+
+/* V11: 中等宽度(768-1049px)两列布局,断点从1199下调到1050,使1366×768在125%缩放仍尽量保持三列 */
+@media (max-width: 1049px) and (min-width: 768px) {
+    .layout {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-rows: auto auto auto;
+        grid-template-areas:
+            "status  config"
+            "leases  logs"
+            "security security";
+    }
+}
+
+/* 窄屏(<768px): 单列,顺序: 状态/配置/租约/日志/安全提示 */
+@media (max-width: 767px) {
+    .layout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        grid-template-areas:
+            "status"
+            "config"
+            "leases"
+            "logs"
+            "security";
+    }
+}
+
+/* ---- 卡片通用样式 ---- */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
     padding: 16px;
-    margin-bottom: 12px;
+    -webkit-box-shadow: var(--shadow-card);
+    box-shadow: var(--shadow-card);
+    min-width: 0;
+    min-height: 0;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
 }
 
-.section h2 {
-    font-size: 16px;
-    color: #1890ff;
-    border-bottom: 1px solid #e8e8e8;
-    padding-bottom: 8px;
+/* 卡片标题行(标题 + 右侧操作) */
+.card-title-row {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: justify;
+    -ms-flex-pack: justify;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    /* V11: 分隔线贯穿卡片宽度 */
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 10px;
+}
+
+.card-title-row .card-title {
+    margin-bottom: 0;
+}
+
+/* V11: 卡片标题增加蓝色线性图标,分隔线贯穿卡片宽度 */
+.card-title {
+    font-size: var(--font-size-lg);
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    font-weight: 600;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+}
+
+/* V11新增: 标题图标使用主色蓝色线性样式 */
+.title-icon {
+    color: var(--color-primary);
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+}
+
+/* V11新增: 标题行内卡片标题(用于含 title-right 的标题),不显示下边线避免重复 */
+.card-title-inline {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+    width: auto;
+}
+
+.title-right {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 8px;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+/* ---- 安全提示卡片 ---- */
+/* V11: 恢复白色外卡片,黄色背景只用于内部警告框 */
+.security-card {
+    /* 外卡片保持与其他卡片一致的白色/深色背景 */
+}
+
+/* V11新增: 内部黄色警告框 */
+.warning-body {
+    position: relative;
+    padding: 12px 16px;
+    overflow: hidden;
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    border-radius: var(--radius-input);
+}
+
+.warning-bg-icon {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    -webkit-transform: translateY(-50%);
+    -ms-transform: translateY(-50%);
+    transform: translateY(-50%);
+    color: var(--color-warning-icon);
+    opacity: 0.12;
+    pointer-events: none;
+}
+
+/* V12: 安全提示分段文案容器 */
+.warning-content {
+    position: relative;
+    z-index: 1;
+    padding-right: 56px;
+}
+
+.warning-line {
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    margin: 0;
+}
+
+/* V12: 警告标签加粗 */
+.warning-label {
+    font-weight: 700;
+    color: var(--color-warning-text);
+    margin-bottom: 4px;
+}
+
+/* V12: 详情文字 */
+.warning-detail {
+    color: var(--color-warning-text);
+    margin-bottom: 6px;
+}
+
+/* V12: 适用场景弱化颜色 */
+.warning-scope {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+/* V12兼容: 保留旧 warning-text 样式供未迁移处使用 */
+.warning-text {
+    font-size: var(--font-size-sm);
+    color: var(--color-warning-text);
+    line-height: 1.6;
+    position: relative;
+    z-index: 1;
+    padding-right: 56px;
+}
+
+/* ---- 服务状态卡 ---- */
+/* V12: 移除灰色矩形背景,改为透明背景 */
+.status-header {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding: 4px 0;             /* V12: 移除内边距背景 */
+    background: transparent;    /* V12: 透明背景 */
+    border-radius: var(--radius-input);
+}
+
+/* V11重构: 大号圆形状态图标,停止/运行使用不同图标及颜色 */
+/* V12: 白底大号圆形状态徽章+浅灰外环 */
+/* V13: 徽章调整为 92px(88-96px 范围),图标同步放大到 44px */
+.status-dot {
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    background: var(--bg-card);   /* V12: 白底 */
+    color: var(--color-text-muted);
+    border: 2px solid var(--color-border); /* V12: 浅灰外环 */
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+    -webkit-transition: background 0.2s, -webkit-box-shadow 0.2s, border-color 0.2s;
+    transition: background 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+/* V13: 状态图标同步放大,默认隐藏由 JS 按状态显示 */
+.status-svg {
+    display: none;
+}
+
+/* 运行中: V12 白底+绿色边框+绿色图标+绿色光晕 */
+.status-dot.running {
+    background: var(--bg-card);
+    border-color: var(--color-success);
+    color: var(--color-success);
+    -webkit-box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
+}
+.status-dot.running .status-svg-running {
+    display: block;
+}
+
+/* 停止: V12 白底+灰色边框+灰色图标 */
+.status-dot.stopped {
+    background: var(--bg-card);
+    border-color: var(--color-text-muted);
+    color: var(--color-text-muted);
+    -webkit-box-shadow: 0 0 0 6px rgba(156, 163, 175, 0.15);
+    box-shadow: 0 0 0 6px rgba(156, 163, 175, 0.15);
+}
+.status-dot.stopped .status-svg-stopped {
+    display: block;
+}
+
+html[data-theme="dark"] .status-dot.stopped {
+    -webkit-box-shadow: 0 0 0 6px rgba(136, 136, 136, 0.25);
+    box-shadow: 0 0 0 6px rgba(136, 136, 136, 0.25);
+}
+html[data-theme="dark"] .status-dot.running {
+    -webkit-box-shadow: 0 0 0 6px rgba(73, 170, 25, 0.3);
+    box-shadow: 0 0 0 6px rgba(73, 170, 25, 0.3);
+}
+
+.status-head-text {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.status-state {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+/* V11: status-state 必须由 JS 设置 running/stopped 类,确保颜色生效 */
+.status-state.running {
+    color: var(--color-success);
+}
+
+.status-state.stopped {
+    color: var(--color-text-muted);
+}
+
+.status-sub {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.status-info {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    gap: 8px;
     margin-bottom: 12px;
 }
 
 .status-row {
-    margin-bottom: 6px;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: var(--font-size-sm);
 }
 
 .status-label {
     font-weight: bold;
-    color: #666;
-    display: inline-block;
-    width: 110px;
-}
-
-.status-running {
-    color: #52c41a;
-    font-weight: bold;
-}
-
-.status-stopped {
-    color: #999;
-    font-weight: bold;
+    color: var(--color-text-secondary);
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
 }
 
 .error-msg {
-    background: #fff2f0;
-    border: 1px solid #ffccc7;
-    color: #cf1322;
+    background: var(--color-error-bg);
+    border: 1px solid var(--color-error-border);
+    color: var(--color-error-text);
     padding: 8px 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-input);
     margin: 8px 0;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
+    word-break: break-all;
 }
 
-.btn-row {
-    margin-top: 12px;
+/* V10新增: 全宽启动/停止按钮(纵向堆叠) */
+.btn-stack {
+    margin-top: auto;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
 }
 
+.btn-full {
+    width: 100%;
+    padding: 10px 24px;
+    font-size: var(--font-size-base);
+    border: none;
+    border-radius: var(--radius-btn);
+    cursor: pointer;
+    color: var(--color-text);
+    background: var(--bg-card);
+    -webkit-transition: background 0.15s, opacity 0.15s;
+    transition: background 0.15s, opacity 0.15s;
+    /* V12: 按钮内 SVG+文字居中对齐 */
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+/* V12新增: 按钮内 SVG 不收缩 */
+.btn-full .btn-svg,
+.btn-outline .btn-svg,
+.btn-mini .btn-svg {
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+}
+
+/* V12新增: 大号描边按钮(快捷操作) */
+.btn-outline {
+    -webkit-box-flex: 1;
+    -ms-flex: 1 1 0;
+    flex: 1 1 0;
+    padding: 10px 12px;
+    font-size: var(--font-size-base);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-btn);
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    background: var(--bg-card);
+    -webkit-transition: border-color 0.15s, color 0.15s, background 0.15s;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.btn-outline:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-btn-icon-hover);
+}
+
+.btn-full:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.btn-start {
+    background: var(--color-primary);
+    color: #fff;
+}
+
+.btn-start:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+}
+
+.btn-stop {
+    background: var(--color-danger);
+    color: #fff;
+}
+
+.btn-stop:hover:not(:disabled) {
+    background: var(--color-danger-hover);
+}
+
+/* ---- 按钮(通用/迷你) ---- */
 button {
     padding: 8px 24px;
-    font-size: 14px;
+    font-size: var(--font-size-base);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-btn);
     cursor: pointer;
-    margin-right: 8px;
+    color: var(--color-text);
+    background: var(--bg-card);
+    -webkit-transition: background 0.15s;
+    transition: background 0.15s;
 }
 
 button:disabled {
@@ -120,117 +809,719 @@ button:disabled {
     cursor: not-allowed;
 }
 
-#btn-start {
-    background: #1890ff;
+/* V10新增: 迷你按钮(用于刷新/导出/添加/清除等) */
+/* V12: 补充内联SVG图标对齐 */
+.btn-mini {
+    background: var(--color-btn-mini-bg);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-btn-mini-border);
+    border-radius: var(--radius-btn);
+    padding: 4px 10px;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    -webkit-transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+    display: -webkit-inline-box;
+    display: -ms-inline-flexbox;
+    display: inline-flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.btn-mini:hover:not(:disabled) {
+    background: var(--color-primary);
     color: #fff;
+    border-color: var(--color-primary);
 }
 
-#btn-start:hover:not(:disabled) {
-    background: #40a9ff;
-}
-
-#btn-stop {
-    background: #ff4d4f;
+.btn-mini-ghost:hover:not(:disabled) {
+    background: var(--color-danger);
     color: #fff;
+    border-color: var(--color-danger);
 }
 
-#btn-stop:hover:not(:disabled) {
-    background: #ff7875;
+/* 弹窗主按钮 */
+.btn-primary {
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    padding: 8px 20px;
+    border-radius: var(--radius-btn);
+    cursor: pointer;
 }
 
+.btn-primary:hover {
+    background: var(--color-primary-hover);
+}
+
+/* ---- 表单: V11 逐行横向布局(标签列宽统一,控件自适应) ---- */
+/* 禁止使用 auto-fit 多列,每行一个字段 */
+.form-rows {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.form-row {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: start;
+    -ms-flex-align: start;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+/* V11: 标签列宽统一 */
+.form-label {
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+    width: 140px;
+    padding-top: 7px;
+    font-weight: bold;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    text-align: right;
+}
+
+/* V11: 控件列自适应 */
+.form-control {
+    -webkit-box-flex: 1;
+    -ms-flex: 1 1 200px;
+    flex: 1 1 200px;
+    min-width: 0;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.form-control select,
+.form-control input {
+    padding: 6px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-input);
+    font-size: var(--font-size-base);
+    width: 100%;
+    max-width: 100%;
+    background: var(--bg-input);
+    color: var(--color-text);
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+.form-control select:focus,
+.form-control input:focus {
+    border-color: var(--color-primary);
+    outline: none;
+}
+
+.form-control select:disabled,
+.form-control input:disabled {
+    background: var(--bg-page);
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+/* 设置弹窗内仍使用 form-group(纵向表单) */
 .form-group {
-    margin-bottom: 10px;
+    min-width: 0;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .form-group label {
-    display: inline-block;
-    width: 150px;
     font-weight: bold;
-    color: #666;
-    vertical-align: middle;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
 }
 
 .form-group select,
 .form-group input {
     padding: 6px 10px;
-    border: 1px solid #d9d9d9;
-    border-radius: 4px;
-    font-size: 14px;
-    width: 250px;
-    vertical-align: middle;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-input);
+    font-size: var(--font-size-base);
+    width: 100%;
+    max-width: 100%;
+    background: var(--bg-input);
+    color: var(--color-text);
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+.form-group input[type="radio"] {
+    width: auto;
 }
 
 .form-group select:focus,
 .form-group input:focus {
-    border-color: #1890ff;
+    border-color: var(--color-primary);
     outline: none;
 }
 
-.adapter-info {
-    display: inline-block;
-    margin-left: 8px;
-    font-size: 12px;
-    color: #999;
-    vertical-align: middle;
+.form-group select:disabled,
+.form-group input:disabled {
+    background: var(--bg-page);
+    opacity: 0.7;
+    cursor: not-allowed;
 }
 
-/* V2新增: 表单字段提示文字 */
+/* V12: 网卡下拉框与说明同一行 */
+.adapter-input-row {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 8px;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+.adapter-input-row select {
+    -webkit-box-flex: 1;
+    -ms-flex: 1 1 160px;
+    flex: 1 1 160px;
+    min-width: 0;
+}
+
+.adapter-info {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    word-break: break-all;
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+}
+
+/* DNS 输入行 + 添加/清除按钮 */
+.dns-group {
+    margin-top: 0;
+}
+
+.dns-input-row {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    gap: 6px;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+.dns-input-row input {
+    -webkit-box-flex: 1;
+    -ms-flex: 1 1 160px;
+    flex: 1 1 160px;
+    min-width: 0;
+}
+
+/* V12: DNS 当前值紧凑标签样式(内联显示在输入行下方) */
+.dns-current-tag {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 8px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    background: var(--color-btn-mini-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    word-break: break-all;
+    max-width: 100%;
+}
+
+/* V12新增: 卡片底部合并提示(网关/DNS) */
+.card-bottom-hint {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--color-border);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    line-height: 1.5;
+}
+
+/* 表单字段提示文字 */
 .field-hint {
     display: block;
-    margin-left: 150px;
     margin-top: 4px;
-    font-size: 12px;
-    color: #999;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
     line-height: 1.4;
 }
 
+/* ---- 当前租约 ---- */
+.lease-total {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-weight: 600;
+}
+
+#lease-total-count {
+    color: var(--color-primary);
+}
+
 .table-wrap {
-    overflow-x: auto;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    min-width: 0;
+    max-height: 360px; /* V10: 表格区域内部滚动,不撑高卡片 */
+    -webkit-box-flex: 1;
+    -ms-flex-positive: 1;
+    flex-grow: 1;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
 }
 
 th, td {
     padding: 8px 10px;
-    border: 1px solid #e8e8e8;
+    border: 1px solid var(--color-border);
     text-align: left;
+    color: var(--color-text);
+    word-break: break-all;
 }
 
 th {
-    background: #fafafa;
+    background: var(--bg-table-head);
     font-weight: bold;
-    color: #666;
+    color: var(--color-text-secondary);
+    /* V10: 列标题不得因缩放变成竖排 */
     white-space: nowrap;
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+/* 表格行隔行变色(深色主题下增强可读性) */
+tbody tr:nth-child(even) {
+    background: var(--bg-table-row-alt);
 }
 
 .empty-msg {
     text-align: center;
-    color: #999;
+    color: var(--color-text-muted);
     padding: 20px;
 }
 
-.log-box {
-    background: #1e1e1e;
-    color: #d4d4d4;
-    font-family: "Consolas", "Courier New", monospace;
-    font-size: 12px;
-    line-height: 1.6;
-    padding: 10px;
-    border-radius: 4px;
-    height: 200px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-all;
+/* V10新增: 空状态内联 SVG 图标 */
+.empty-state {
+    text-align: center;
+    color: var(--color-text-muted);
+    padding: 24px;
 }
 
-.footer {
-    text-align: center;
-    color: #999;
-    font-size: 12px;
+.empty-state .empty-icon {
+    color: var(--color-text-muted);
+    opacity: 0.5;
+    display: block;
+    margin: 0 auto 8px;
+}
+
+/* ---- 日志 ---- */
+.autoscroll-toggle {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.autoscroll-toggle input {
+    cursor: pointer;
+}
+
+/* V11新增: 日志操作区(移到日志框下方) */
+.log-actions {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: justify;
+    -ms-flex-pack: justify;
+    justify-content: space-between;
+    gap: 8px;
     margin-top: 8px;
-    padding: 8px 0;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+.log-actions-right {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 6px;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+/* 日志区保持深色控制台风格,浅色/深色主题下均使用深底浅字 */
+.log-box {
+    background: var(--bg-log);
+    color: #d4d4d4;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    padding: 10px;
+    border-radius: var(--radius-input);
+    /* V12: 高度使用 clamp 适配屏幕 */
+    height: clamp(180px, 30vh, 360px);
+    overflow-y: auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: pre-wrap;
+    word-break: break-all;
+    -webkit-box-flex: 1;
+    -ms-flex-positive: 1;
+    flex-grow: 1;
+    min-height: 120px;
+}
+
+/* V11新增: 快捷操作区(状态卡底部) */
+.quick-actions {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+}
+
+.quick-title {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.quick-btns {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    gap: 6px;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+}
+
+/* V11重构: 底部贴近页面底部的横向状态栏,取消独立圆角卡片外观 */
+.footer {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-pack: justify;
+    -ms-flex-pack: justify;
+    justify-content: space-between;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    margin-top: auto; /* V11: 贴近页面底部 */
+    padding: 8px 4px;
+    background: transparent; /* V11: 取消独立背景 */
+    border: none; /* V11: 取消独立边框 */
+    border-top: 1px solid var(--color-border); /* V11: 仅保留顶部分隔线 */
+    border-radius: 0; /* V11: 取消圆角 */
+}
+
+.footer-left,
+.footer-center,
+.footer-right {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.footer-badge {
+    background: var(--color-footer-badge-bg);
+    border: 1px solid var(--color-footer-badge-border);
+    color: var(--color-footer-badge-text);
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: var(--font-size-sm);
+}
+
+/* V12新增: 底部绿色盾牌图标 */
+.footer-shield {
+    color: var(--color-shield);
+    -ms-flex-negative: 0;
+    flex-shrink: 0;
+}
+
+.footer-sep {
+    color: var(--color-text-muted);
+}
+
+.footer-time-label {
+    color: var(--color-text-muted);
+}
+
+#footer-time {
+    color: var(--color-text-secondary);
+    font-family: "Consolas", "Courier New", monospace;
+}
+
+/* V12: #footer-version 已移除,版本号通过 #footer-right-text 模板统一渲染 */
+#footer-right-text {
+    color: var(--color-text-secondary);
+    font-weight: 600;
+}
+
+/* ---- 弹窗 ---- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.modal {
+    background: var(--bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    -webkit-box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    width: 100%;
+    max-width: 460px;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+}
+
+.modal-header {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-pack: justify;
+    -ms-flex-pack: justify;
+    justify-content: space-between;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h3 {
+    font-size: var(--font-size-lg);
+    color: var(--color-text);
+    font-weight: 600;
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 0 8px;
+    border-radius: var(--radius-btn);
+}
+
+.modal-close:hover {
+    color: var(--color-text);
+}
+
+.modal-body {
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.modal-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--color-border);
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-pack: end;
+    -ms-flex-pack: end;
+    justify-content: flex-end;
+}
+
+/* 单选按钮组(语言选择) */
+.radio-group {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 6px;
+}
+
+.radio-label {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    width: auto;
+    font-weight: normal;
+    color: var(--color-text);
+}
+
+/* ---- 关于弹窗内容 ---- */
+.about-desc {
+    margin-bottom: 14px;
+    line-height: 1.7;
+    color: var(--color-text);
+}
+
+.about-info {
+    background: var(--bg-page);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-input);
+    padding: 12px;
+    margin-bottom: 14px;
+}
+
+.about-row {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    padding: 4px 0;
+    gap: 8px;
+}
+
+.about-label {
+    color: var(--color-text-secondary);
+    font-weight: bold;
+    min-width: 80px;
+}
+
+.about-support {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+}
+
+.about-warning {
+    font-size: var(--font-size-sm);
+    color: var(--color-warning-text);
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    padding: 8px 12px;
+    border-radius: var(--radius-input);
+    line-height: 1.6;
+}
+
+/* ---- 窄屏适配 ---- */
+@media (max-width: 767px) {
+    .header {
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+        -webkit-box-align: stretch;
+        -ms-flex-align: stretch;
+        align-items: stretch;
+    }
+    .header-actions {
+        -webkit-box-pack: center;
+        -ms-flex-pack: center;
+        justify-content: center;
+    }
+    .footer {
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+        text-align: center;
+    }
+    .log-box {
+        height: 200px;
+    }
+    .table-wrap {
+        max-height: 280px;
+    }
+    .warning-text {
+        padding-right: 0;
+    }
+    .warning-bg-icon {
+        display: none;
+    }
+}
+
+/* ---- 极小屏幕适配 ---- */
+@media (max-width: 480px) {
+    .container {
+        padding: 8px;
+    }
+    .card {
+        padding: 12px;
+    }
+    .header h1 {
+        font-size: var(--font-size-lg);
+    }
 }

@@ -23,6 +23,9 @@ type Logger struct {
 	ring     []string
 	ringPos  int
 	ringLen  int
+	// V14测试钩子: 非 nil 时 Clear 的 Truncate 路径直接返回该错误,用于模拟截断失败
+	// 仅测试使用,生产代码不得设置
+	testTruncateErr error
 }
 
 // NewLogger 创建日志记录器
@@ -98,6 +101,73 @@ func (l *Logger) Close() {
 		l.file.Close()
 		l.file = nil
 	}
+}
+
+// Clear V12新增: 清空内存环形缓冲区并截断当前日志文件
+// V14重写: 优先在现有文件句柄上执行 Truncate(0),成功后再清空内存环形缓冲区
+// 截断失败时不得关闭或替换原句柄,不得清空内存日志,保证原日志写入能力不丢失
+// 若确需重新打开文件(Windows O_APPEND 句柄 Truncate 失败或句柄为 nil),
+// 必须先成功取得新句柄再关闭旧句柄,任何失败路径都保证原日志写入能力不丢失
+func (l *Logger) Clear() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// V14: 句柄为 nil 时(异常状态),先取得新句柄再赋值,失败则返回错误不修改状态
+	if l.file == nil {
+		f, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_APPEND, 0644)
+		if err != nil {
+			// 无法打开文件,保留 nil 句柄和内存日志,返回错误
+			return fmt.Errorf("reopen_log_failed: %v", err)
+		}
+		// 新句柄取得成功后才赋值
+		l.file = f
+		// 文件已是空(O_TRUNC),清空内存缓冲区
+		l.clearRingLocked()
+		return nil
+	}
+
+	// V14测试钩子: 模拟截断完全失败(Truncate 和 reopen 均失败),验证原句柄和内存保留
+	// 测试设置此字段后 Clear 直接返回错误,不尝试 Truncate 也不尝试 reopen
+	if l.testTruncateErr != nil {
+		return fmt.Errorf("truncate_log_failed: %v", l.testTruncateErr)
+	}
+
+	// V14: 优先在现有句柄上 Truncate(0),不关闭不替换原句柄
+	truncateErr := l.file.Truncate(0)
+	if truncateErr == nil {
+		// Truncate 成功,Seek 到文件头重置写入位置
+		if _, err := l.file.Seek(0, io.SeekStart); err != nil {
+			// Seek 失败: 保留原句柄和内存日志,返回错误
+			// 文件已被 Truncate 但写入位置可能不对,后续写入仍可用(O_APPEND 会修正)
+			return fmt.Errorf("seek_log_failed: %v", err)
+		}
+		// 文件截断和 Seek 都成功,清空内存环形缓冲区
+		l.clearRingLocked()
+		return nil
+	}
+
+	// V14: Truncate 失败(Windows O_APPEND 句柄不支持 Truncate),走 reopen 回退路径
+	// 必须先成功取得新句柄,再关闭旧句柄;新句柄未取得前不动旧句柄
+	newFile, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_APPEND, 0644)
+	if err != nil {
+		// reopen 失败: 保留原句柄和内存日志,返回错误,不中断后续写入
+		return fmt.Errorf("truncate_log_failed: %v", truncateErr)
+	}
+	// 新句柄取得成功,关闭旧句柄并替换为新句柄
+	l.file.Close()
+	l.file = newFile
+	// 文件已被 O_TRUNC 清空,清空内存环形缓冲区
+	l.clearRingLocked()
+	return nil
+}
+
+// clearRingLocked 清空内存环形缓冲区(调用方必须持有 mu 锁)
+func (l *Logger) clearRingLocked() {
+	for i := range l.ring {
+		l.ring[i] = ""
+	}
+	l.ringPos = 0
+	l.ringLen = 0
 }
 
 // rotateIfNeeded 在日志文件达到最大大小时执行轮转
