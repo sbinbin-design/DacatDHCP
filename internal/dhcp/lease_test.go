@@ -2,6 +2,7 @@ package dhcp
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -325,14 +326,16 @@ func TestLeaseExpiry(t *testing.T) {
 func TestBuildPacket_NoRouterDNS(t *testing.T) {
 	pkt := BuildPacket(
 		MsgTypeACK,
-		0x12345678,   // xid
-		0x0000,       // flags
-		nil,          // ciaddr
+		0x12345678,                   // xid
+		0x0000,                       // flags
+		nil,                          // ciaddr
 		net.ParseIP("192.168.1.100"), // yiaddr
 		net.ParseIP("192.168.1.1"),   // serverIP
 		mac("00:11:22:33:44:55"),     // chaddr
-		3600,         // leaseTime
-		net.IPv4Mask(255, 255, 255, 0), // subnetMask
+		ReplyOptions{ // V2: 空 Router/DNSServers 不下发 Option 3/6
+			LeaseTime:  3600,
+			SubnetMask: net.IPv4Mask(255, 255, 255, 0),
+		},
 	)
 
 	// 验证 siaddr (buf[20:24]) 为 0.0.0.0
@@ -446,6 +449,87 @@ func TestPoolSize_Max4096(t *testing.T) {
 	_, err := NewLeaseStore(poolStart, poolEnd, serverIP, mask, 60*time.Minute)
 	if err == nil {
 		t.Error("超过 4096 的地址池应返回错误")
+	}
+}
+
+// ---- 测试: 起始地址大于结束地址返回明确错误（禁止 uint32 回绕） ----
+
+func TestPoolStartGreaterThanEnd_Rejected(t *testing.T) {
+	// 起始 IP 大于结束 IP
+	poolStart := net.ParseIP("192.168.1.200")
+	poolEnd := net.ParseIP("192.168.1.100")
+	serverIP := net.ParseIP("192.168.1.1")
+	mask := net.IPv4Mask(255, 255, 255, 0)
+
+	_, err := NewLeaseStore(poolStart, poolEnd, serverIP, mask, 60*time.Minute)
+	if err == nil {
+		t.Fatal("起始地址大于结束地址应返回错误")
+	}
+	// 必须返回明确的"起始地址不能大于结束地址"错误，而非回绕后的"地址池过大"
+	if !strings.Contains(err.Error(), "起始地址不能大于结束地址") {
+		t.Errorf("应返回起始大于结束的明确错误，实际: %v", err)
+	}
+}
+
+// ---- 测试: 起始地址等于结束地址允许创建单地址池 ----
+
+func TestPoolStartEqualsEnd_SingleAddressAllowed(t *testing.T) {
+	// 起始 IP 等于结束 IP → 单地址池
+	poolStart := net.ParseIP("192.168.1.150")
+	poolEnd := net.ParseIP("192.168.1.150")
+	serverIP := net.ParseIP("192.168.1.1")
+	mask := net.IPv4Mask(255, 255, 255, 0)
+
+	store, err := NewLeaseStore(poolStart, poolEnd, serverIP, mask, 60*time.Minute)
+	if err != nil {
+		t.Fatalf("单地址池应创建成功，错误: %v", err)
+	}
+
+	total, _ := store.PoolStats()
+	if total != 1 {
+		t.Errorf("单地址池总量应为 1，实际: %d", total)
+	}
+}
+
+// ---- 测试: 超过 MaxPoolSize 仍返回大小限制错误（非回绕误报） ----
+
+func TestPoolSize_OverMaxReturnsSizeError(t *testing.T) {
+	// 8000 个地址，超过 MaxPoolSize(4096)
+	poolStart := net.ParseIP("10.0.0.1")
+	poolEnd := net.ParseIP("10.0.31.64") // 约 8000 个地址
+	serverIP := net.ParseIP("10.0.0.0")
+	mask := net.IPv4Mask(255, 255, 0, 0)
+
+	_, err := NewLeaseStore(poolStart, poolEnd, serverIP, mask, 60*time.Minute)
+	if err == nil {
+		t.Fatal("超过 MaxPoolSize 的地址池应返回错误")
+	}
+	// 应返回大小限制错误，而非起始大于结束错误
+	if !strings.Contains(err.Error(), "地址池最大支持") {
+		t.Errorf("应返回地址池大小限制错误，实际: %v", err)
+	}
+}
+
+// ---- 测试: 合法边界不受本次修改影响 ----
+
+func TestValidBoundary_Unaffected(t *testing.T) {
+	// 正常 101 地址池
+	poolStart := net.ParseIP("192.168.1.100")
+	poolEnd := net.ParseIP("192.168.1.200")
+	serverIP := net.ParseIP("192.168.1.1")
+	mask := net.IPv4Mask(255, 255, 255, 0)
+
+	store, err := NewLeaseStore(poolStart, poolEnd, serverIP, mask, 60*time.Minute)
+	if err != nil {
+		t.Fatalf("合法地址池应创建成功，错误: %v", err)
+	}
+
+	total, used := store.PoolStats()
+	if total != 101 {
+		t.Errorf("合法地址池总量应为 101，实际: %d", total)
+	}
+	if used != 0 {
+		t.Errorf("初始 used 应为 0，实际: %d", used)
 	}
 }
 

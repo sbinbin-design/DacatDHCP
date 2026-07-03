@@ -174,6 +174,16 @@ button:disabled {
     vertical-align: middle;
 }
 
+/* V2新增: 表单字段提示文字 */
+.field-hint {
+    display: block;
+    margin-left: 150px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #999;
+    line-height: 1.4;
+}
+
 .table-wrap {
     overflow-x: auto;
 }

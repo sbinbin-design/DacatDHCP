@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	maxLogSize     = 2 * 1024 * 1024 // 2MB
-	logRingSize    = 500              // 内存中保留的最近日志条数
-	logTimeFormat  = "2006-01-02 15:04:05"
+	maxLogSize    = 2 * 1024 * 1024 // 2MB
+	logRingSize   = 500             // 内存中保留的最近日志条数
+	logTimeFormat = "2006-01-02 15:04:05"
 )
 
 // Logger 提供日志记录功能，同时写入文件和内存环形缓冲区
@@ -120,7 +120,7 @@ func (l *Logger) rotateIfNeeded() {
 
 	// 将当前日志重命名为 .old（覆盖旧的 .old）
 	oldPath := l.filePath + ".old"
-	os.Remove(oldPath) // 忽略错误
+	os.Remove(oldPath)             // 忽略错误
 	os.Rename(l.filePath, oldPath) // 忽略错误
 
 	// 创建新的日志文件

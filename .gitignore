@@ -1,0 +1,15 @@
+# 构建产物
+/dist/
+
+# 运行时数据目录（首次运行自动创建）
+/data/
+
+# 根目录禁止生成 EXE
+/DacatDHCP.exe
+
+# 测试与覆盖率产物
+*.test.exe
+coverage.out
+
+# 项目本地工具二进制（goversioninfo 等，不提交）
+/.tools/

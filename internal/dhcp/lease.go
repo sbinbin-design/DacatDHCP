@@ -84,7 +84,12 @@ func NewLeaseStore(poolStart, poolEnd net.IP, serverIP net.IP, subnetMask net.IP
 	startVal := ipToUint32(poolStart.To4())
 	endVal := ipToUint32(poolEnd.To4())
 
-	// V1修复: 校验地址池大小
+	// 优先校验起始地址不能大于结束地址，避免 uint32 无符号减法回绕后误报
+	if startVal > endVal {
+		return nil, fmt.Errorf("地址池起始地址不能大于结束地址")
+	}
+
+	// 校验地址池大小
 	poolSize := int(endVal - startVal + 1)
 	if poolSize <= 0 {
 		return nil, fmt.Errorf("地址池起止地址无效")
@@ -95,7 +100,7 @@ func NewLeaseStore(poolStart, poolEnd net.IP, serverIP net.IP, subnetMask net.IP
 
 	// V1修复: 计算网络地址和广播地址，使用 uint32 数值计算
 	var networkAddr, broadcastAddr uint32
-	if subnetMask != nil && len(subnetMask) >= 4 {
+	if len(subnetMask) >= net.IPv4len {
 		maskVal := binary.BigEndian.Uint32(subnetMask[:4])
 		if serverIP != nil {
 			ipVal := ipToUint32(serverIP.To4())

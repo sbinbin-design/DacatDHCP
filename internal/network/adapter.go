@@ -11,15 +11,15 @@ import (
 
 // AdapterInfo 表示一个网卡的信息
 type AdapterInfo struct {
-	Name     string `json:"name"`     // 友好名称，如 "Ethernet"
-	IP       string `json:"ip"`       // IPv4 地址
-	Mask     string `json:"mask"`     // 子网掩码
-	MAC      string `json:"mac"`      // MAC 地址
-	Status   string `json:"status"`   // "up" 或 "down"
-	Type     string `json:"type"`     // "physical" 或 "virtual"
-	Index    int    `json:"index"`    // 接口索引
-	IsUp     bool   `json:"isUp"`     // 是否已连接
-	HasIPv4  bool   `json:"hasIPv4"`  // 是否有 IPv4 地址
+	Name    string `json:"name"`    // 友好名称，如 "Ethernet"
+	IP      string `json:"ip"`      // IPv4 地址
+	Mask    string `json:"mask"`    // 子网掩码
+	MAC     string `json:"mac"`     // MAC 地址
+	Status  string `json:"status"`  // "up" 或 "down"
+	Type    string `json:"type"`    // "physical" 或 "virtual"
+	Index   int    `json:"index"`   // 接口索引
+	IsUp    bool   `json:"isUp"`    // 是否已连接
+	HasIPv4 bool   `json:"hasIPv4"` // 是否有 IPv4 地址
 }
 
 // virtualKeywords 用于识别虚拟网卡的关键词

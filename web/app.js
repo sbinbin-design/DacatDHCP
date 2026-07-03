@@ -1,4 +1,5 @@
-/* DacatDHCP V1 - IE11 兼容 JavaScript */
+/* DacatDHCP - IE11 兼容 JavaScript */
+/* 版本号从 /api/version 动态获取，禁止在前端硬编码 */
 /* 严禁使用: fetch, Promise, async/await, 箭头函数, 可选链, 模板字符串 */
 
 (function () {
@@ -55,6 +56,8 @@
     function init() {
         // V1修复: 配置加载顺序：先加载 config.json，再加载网卡列表，最后恢复已保存网卡
         loadConfigAndAdapters();
+        // 版本号从后端 /api/version 动态获取（唯一源: internal/version/versioninfo.json）
+        loadVersion();
         refreshStatus();
         // 启动轮询
         pollTimer = setInterval(function () {
@@ -62,6 +65,19 @@
             refreshLeases();
             refreshLogs();
         }, 3000);
+    }
+
+    // ---- 加载版本号（从 /api/version 动态获取，不硬编码）----
+
+    function loadVersion() {
+        get("/api/version", function (err, data) {
+            if (err || !data || !data.version) return;
+            var display = "V" + data.version;
+            var appVer = document.getElementById("app-version");
+            if (appVer) appVer.innerHTML = display;
+            var footerVer = document.getElementById("footer-version");
+            if (footerVer) footerVer.innerHTML = display;
+        });
     }
 
     // ---- 加载配置和网卡（V1修复: 确保配置先加载，再加载网卡列表恢复已保存选择）----
@@ -82,6 +98,9 @@
                 if (cfg.lease_minutes && cfg.lease_minutes > 0) {
                     document.getElementById("lease-time").value = cfg.lease_minutes;
                 }
+                // V2新增: 恢复已保存的网关和 DNS（不覆盖为空，保留用户配置）
+                document.getElementById("gateway").value = cfg.gateway || "";
+                document.getElementById("dns-servers").value = (cfg.dns_servers || []).join(", ");
             }
             // 配置加载完成后再加载网卡列表（保证 data-selected 已设置）
             loadAdapters();
@@ -123,9 +142,11 @@
 
     // 网卡选择变化时更新详情
     // V1修复: 用户主动切换网卡时清空地址池并重新请求推荐值
+    // V2新增: 用户主动切换网卡时清空网关（DNS 保留原值）
     function onAdapterChange() {
         updateAdapterInfo();
         requestPoolRecommend();
+        document.getElementById("gateway").value = "";
     }
 
     function updateAdapterInfo() {
@@ -222,11 +243,14 @@
     }
 
     // 运行时锁定配置输入
+    // V2新增: 网关和 DNS 与网卡、地址池、租约时间一起锁定
     function setConfigDisabled(disabled) {
         document.getElementById("adapter-select").disabled = disabled;
         document.getElementById("pool-start").disabled = disabled;
         document.getElementById("pool-end").disabled = disabled;
         document.getElementById("lease-time").disabled = disabled;
+        document.getElementById("gateway").disabled = disabled;
+        document.getElementById("dns-servers").disabled = disabled;
     }
 
     // ---- 启动服务 ----
@@ -236,6 +260,17 @@
         var poolStart = document.getElementById("pool-start").value.trim();
         var poolEnd = document.getElementById("pool-end").value.trim();
         var leaseTime = parseInt(document.getElementById("lease-time").value, 10);
+        // V2新增: 读取网关和 DNS（可选）
+        var gateway = document.getElementById("gateway").value.trim();
+        var dnsRaw = document.getElementById("dns-servers").value.trim();
+        var dnsServers = [];
+        if (dnsRaw) {
+            var parts = dnsRaw.split(",");
+            for (var i = 0; i < parts.length; i++) {
+                var s = parts[i].trim();
+                if (s) dnsServers.push(s);
+            }
+        }
 
         // 前端校验
         if (!adapter) {
@@ -263,7 +298,9 @@
             adapter_name: adapter,
             pool_start: poolStart,
             pool_end: poolEnd,
-            lease_minutes: leaseTime
+            lease_minutes: leaseTime,
+            gateway: gateway,
+            dns_servers: dnsServers
         }, function (err, resp) {
             btnStart.innerHTML = "启动服务";
             if (err) {

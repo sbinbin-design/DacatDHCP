@@ -26,22 +26,22 @@ const (
 
 // DHCP 选项代码
 const (
-	OptPad                 = 0
-	OptSubnetMask          = 1
-	OptRouter              = 3
-	OptDNSServer           = 6
-	OptHostName            = 12
-	OptDomainName          = 15
-	OptBroadcastAddr       = 28
-	OptRequestedIP         = 50
-	OptLeaseTime           = 51
-	OptMsgType             = 53
-	OptServerID            = 54
-	OptParameterList       = 55
-	OptRenewalTime         = 58
-	OptRebindingTime       = 59
-	OptClientID            = 61
-	OptEnd                 = 255
+	OptPad           = 0
+	OptSubnetMask    = 1
+	OptRouter        = 3
+	OptDNSServer     = 6
+	OptHostName      = 12
+	OptDomainName    = 15
+	OptBroadcastAddr = 28
+	OptRequestedIP   = 50
+	OptLeaseTime     = 51
+	OptMsgType       = 53
+	OptServerID      = 54
+	OptParameterList = 55
+	OptRenewalTime   = 58
+	OptRebindingTime = 59
+	OptClientID      = 61
+	OptEnd           = 255
 )
 
 // DHCP 硬件类型
@@ -51,7 +51,7 @@ const (
 
 // DHCP 包固定头部大小
 const (
-	HeaderLen   = 236
+	HeaderLen    = 236
 	MinPacketLen = 240 // 236 + 4 (magic cookie)
 	MaxPacketLen = 576 // DHCP 最小 MTU
 	MagicCookie  = 0x63825363
@@ -203,12 +203,23 @@ func ParsePacket(data []byte) (*Packet, error) {
 	return p, nil
 }
 
+// ReplyOptions 封装 OFFER/ACK 报文可选下发参数（V2新增: 支持可选网关和DNS）
+// 网关和DNS为空时保持原 V1 行为（不下发 Option 3/6）
+type ReplyOptions struct {
+	LeaseTime  uint32     // 租约时间（秒），0 表示不下发租约相关选项
+	SubnetMask net.IPMask // 子网掩码（Option 1），nil 表示不下发
+	Router     net.IP     // 网关（Option 3），nil 表示不下发
+	DNSServers []net.IP   // DNS 服务器（Option 6），nil/空 表示不下发；多个按顺序拼接
+}
+
 // BuildPacket 构建 DHCP 响应包
-// V1修复: 移除 router/dnsServer 参数，siaddr 保持 0.0.0.0，仅通过 Option 54 声明 Server Identifier
+// V1修复: siaddr 保持 0.0.0.0，仅通过 Option 54 声明 Server Identifier
+// V2新增: 通过 ReplyOptions 携带可选网关(Option 3)和DNS(Option 6)，非空才下发
+// NAK 报文应传入零值 ReplyOptions（不下发租约时间、子网掩码、网关、DNS）
 func BuildPacket(msgType byte, xid uint32, flags uint16,
 	clientIP, yourIP, serverIP net.IP,
 	clientMAC net.HardwareAddr,
-	leaseTime uint32, subnetMask net.IPMask) []byte {
+	opts ReplyOptions) []byte {
 
 	buf := make([]byte, 576) // DHCP 最大包长度
 	for i := range buf {
@@ -224,12 +235,12 @@ func BuildPacket(msgType byte, xid uint32, flags uint16,
 	binary.BigEndian.PutUint16(buf[8:10], 0) // Secs
 	binary.BigEndian.PutUint16(buf[10:12], flags)
 
-	// 地址字段
-	if clientIP != nil && len(clientIP) >= 4 {
-		copy(buf[12:16], clientIP.To4())
+	// 地址字段：统一使用 To4 结果判断，nil 和 IPv6 地址不会错误复制到 IPv4 字段
+	if ip4 := clientIP.To4(); ip4 != nil {
+		copy(buf[12:16], ip4)
 	}
-	if yourIP != nil && len(yourIP) >= 4 {
-		copy(buf[16:20], yourIP.To4())
+	if ip4 := yourIP.To4(); ip4 != nil {
+		copy(buf[16:20], ip4)
 	}
 	// siaddr (buf[20:24]) 保持 0.0.0.0，不设置
 	// GIAddr 保持为 0
@@ -254,32 +265,53 @@ func BuildPacket(msgType byte, xid uint32, flags uint16,
 	}
 
 	// Lease Time
-	if leaseTime > 0 {
+	if opts.LeaseTime > 0 {
 		ltBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(ltBuf, leaseTime)
+		binary.BigEndian.PutUint32(ltBuf, opts.LeaseTime)
 		offset = appendOption(buf, offset, OptLeaseTime, ltBuf)
 	}
 
 	// Renewal Time (T1) = 50% lease time
-	if leaseTime > 0 {
+	if opts.LeaseTime > 0 {
 		t1 := make([]byte, 4)
-		binary.BigEndian.PutUint32(t1, leaseTime/2)
+		binary.BigEndian.PutUint32(t1, opts.LeaseTime/2)
 		offset = appendOption(buf, offset, OptRenewalTime, t1)
 	}
 
 	// Rebinding Time (T2) = 87.5% lease time
-	if leaseTime > 0 {
+	if opts.LeaseTime > 0 {
 		t2 := make([]byte, 4)
-		binary.BigEndian.PutUint32(t2, leaseTime*7/8)
+		binary.BigEndian.PutUint32(t2, opts.LeaseTime*7/8)
 		offset = appendOption(buf, offset, OptRebindingTime, t2)
 	}
 
 	// Subnet Mask
-	if subnetMask != nil {
-		offset = appendOption(buf, offset, OptSubnetMask, subnetMask)
+	if opts.SubnetMask != nil {
+		offset = appendOption(buf, offset, OptSubnetMask, opts.SubnetMask)
 	}
 
-	// V1修复: 默认不下发 Option 3 (Router) 和 Option 6 (DNS)
+	// V2新增: 网关非空才下发 Option 3 (Router)
+	if opts.Router != nil {
+		if r := opts.Router.To4(); r != nil {
+			offset = appendOption(buf, offset, OptRouter, r)
+		}
+	}
+
+	// V2新增: DNS 非空才下发 Option 6，多个 DNS 按顺序拼接为连续 IPv4 字节
+	if len(opts.DNSServers) > 0 {
+		dnsBuf := make([]byte, 0, len(opts.DNSServers)*4)
+		for _, dns := range opts.DNSServers {
+			if dns == nil {
+				continue
+			}
+			if d := dns.To4(); d != nil {
+				dnsBuf = append(dnsBuf, d...)
+			}
+		}
+		if len(dnsBuf) > 0 {
+			offset = appendOption(buf, offset, OptDNSServer, dnsBuf)
+		}
+	}
 
 	// End
 	buf[offset] = OptEnd
