@@ -1,4 +1,8 @@
-# DacatDHCP
+<p align="center">
+  <img src="web/dhcp.ico" width="120" alt="DacatDHCP">
+</p>
+
+<h1 align="center">DacatDHCP</h1>
 
 > [English](README_EN.md) | 中文
 
