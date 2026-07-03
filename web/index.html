@@ -16,7 +16,8 @@
         <header class="header">
             <div class="brand">
                 <!-- V12: Logo 放大到 56px -->
-                <img src="favicon.ico" alt="DacatDHCP" class="brand-logo">
+                <!-- V15: 统一改用内联 SVG(保留 dhcp.ico 猫形轮廓),fill=currentColor 由主题控制颜色;dhcp.ico 继续用于 favicon/EXE 图标/PE 资源 -->
+                <svg class="brand-logo" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g fill="currentColor"><path d="M72 127L64 136L60 146L60 166L65 183L81 213L92 227L99 230L99 223L91 194L92 178L98 175L103 180L105 188L105 222L106 225L111 229L115 224L120 188L124 177L130 171L138 172L146 183L150 221L155 231L159 228L162 219L164 205L164 182L170 175L174 175L177 178L178 187L165 223L165 229L170 230L177 224L196 191L204 166L205 145L203 136L197 124L190 117L179 111L165 107L149 105L128 105L114 107L97 112L81 120Z"/><path d="M85 56L79 57L69 68L65 76L54 84L35 86L26 92L28 99L35 107L35 114L38 127L41 133L45 136L56 136L67 126L83 115L99 107L112 103L116 100L118 92L115 86L106 77L95 72L89 60Z"/><path d="M226 25L215 25L207 30L198 42L192 56L188 78L188 106L190 112L200 121L214 104L228 83L240 58L242 49L240 36L234 29Z"/><path d="M29 137L25 139L17 148L14 154L14 159L21 145Z"/><path d="M32 141L29 143L24 152L23 161L25 158L25 153Z"/><path d="M128 80L137 78L150 80L153 79L148 77L136 77Z"/><path d="M130 85L138 85L149 89L147 86L140 84Z"/></g></svg>
                 <div class="brand-text">
                     <div class="brand-title-row">
                         <!-- V12: 标题改为深色粗体,版本徽章紧跟标题 -->
@@ -329,6 +330,9 @@
                     <div class="about-row"><span class="about-label" data-i18n="about.version">版本</span><span id="about-version"></span></div>
                     <div class="about-row"><span class="about-label" data-i18n="about.file_version">文件版本</span><span id="about-file-version"></span></div>
                     <div class="about-row"><span class="about-label" data-i18n="about.copyright">版权</span><span id="about-copyright"></span></div>
+                    <!-- V14新增: 技术支持与开源项目链接,新窗口打开并添加 rel="noopener noreferrer" -->
+                    <div class="about-row"><span class="about-label" data-i18n="about.tech_support">技术支持</span><a class="about-link" href="https://dacat.cc" target="_blank" rel="noopener noreferrer">https://dacat.cc</a></div>
+                    <div class="about-row"><span class="about-label" data-i18n="about.open_source">开源项目</span><a class="about-link" href="https://github.com/sbinbin-design/DacatDHCP" target="_blank" rel="noopener noreferrer">https://github.com/sbinbin-design/DacatDHCP</a></div>
                 </div>
                 <p class="about-support" data-i18n="about.support">正式支持 Windows 10/11、Windows Server 2016+</p>
                 <p class="about-warning" data-i18n="about.warning">本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。</p>

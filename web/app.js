@@ -211,6 +211,8 @@
     // V12新增: 按模板渲染底部右侧"DacatDHCP V版本号｜版权"
     // 模板来自 i18n 的 footer.right_template,占位符 %s 分别替换为版本号和版权
     // V13修复: 版本尚未加载时不显示空的"DacatDHCP V｜©",显示占位"-"
+    // V14重构: 模板改为"DacatDHCP V版本号 · © 年份 ",年份动态生成,版权(DACAT.CC)作为外链追加
+    //         版本号仍读取 savedVersion(来自 /api/version 唯一源),不新增重复版本常量
     function renderFooterRight() {
         var el = document.getElementById("footer-right-text");
         if (!el) return;
@@ -219,12 +221,22 @@
             el.textContent = "-";
             return;
         }
-        var tmpl = window.I18N ? I18N.t("footer.right_template") : "DacatDHCP %s｜© %s";
+        var tmpl = window.I18N ? I18N.t("footer.right_template") : "DacatDHCP %s · © %s ";
         var ver = savedVersion || "";
-        var cr = savedCopyright || "";
-        // 替换两个 %s 占位符: 第一个为版本号(带 V 前缀),第二个为版权
-        var text = tmpl.replace("%s", "V" + ver).replace("%s", cr);
-        el.textContent = text;
+        // V14: 年份动态生成,不硬编码
+        var year = new Date().getFullYear();
+        // 替换两个 %s 占位符: 第一个为版本号(带 V 前缀),第二个为动态年份
+        var textPart = tmpl.replace("%s", "V" + ver).replace("%s", String(year));
+        el.innerHTML = "";
+        el.appendChild(document.createTextNode(textPart));
+        // V14新增: 追加 DACAT.CC 外链,新窗口打开并添加 rel="noopener noreferrer"
+        var link = document.createElement("a");
+        link.href = "https://dacat.cc";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.className = "footer-link";
+        link.textContent = savedCopyright || "DACAT.CC";
+        el.appendChild(link);
     }
 
     // V11新增: 单独渲染管理员权限状态,基于已保存的 savedIsAdmin,语言切换时调用此函数而非重新请求

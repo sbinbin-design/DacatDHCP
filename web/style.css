@@ -161,11 +161,19 @@ body {
 
 /* V11: 放大 Logo */
 /* V12: Logo 放大到 56px(54-58px 范围) */
+/* V15: 统一内联 SVG,fill=currentColor 由主题控制颜色,不使用 CSS filter */
 .brand-logo {
     width: 56px;
     height: 56px;
     -ms-flex-negative: 0;
     flex-shrink: 0;
+    display: block;
+    color: #1f2f34;
+}
+
+/* V15: 暗色模式 Logo 切换为浅色,亮色模式保持深色 */
+html[data-theme="dark"] .brand-logo {
+    color: #f3f6fb;
 }
 
 .brand-text {
@@ -471,9 +479,6 @@ html[data-theme="dark"] .icon-sun {
 
 /* ---- 安全提示卡片 ---- */
 /* V11: 恢复白色外卡片,黄色背景只用于内部警告框 */
-.security-card {
-    /* 外卡片保持与其他卡片一致的白色/深色背景 */
-}
 
 /* V11新增: 内部黄色警告框 */
 .warning-body {
@@ -1014,9 +1019,15 @@ button:disabled {
 .adapter-info {
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
-    word-break: break-all;
-    -ms-flex-negative: 0;
-    flex-shrink: 0;
+    /* V15修复: 删除 flex-shrink:0,改为允许收缩和换行,避免移动端网卡详情撑宽卡片 */
+    -webkit-box-flex: 1;
+    -ms-flex: 1 1 260px;
+    flex: 1 1 260px;
+    min-width: 0;
+    max-width: 100%;
+    word-wrap: break-word;     /* IE11 兼容回退 */
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 /* DNS 输入行 + 添加/清除按钮 */
@@ -1313,6 +1324,17 @@ tbody tr:nth-child(even) {
     font-weight: 600;
 }
 
+/* V14新增: 底部右侧 DACAT.CC 外链样式 */
+.footer-link {
+    color: var(--color-primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.footer-link:hover {
+    text-decoration: underline;
+}
+
 /* ---- 弹窗 ---- */
 .modal-overlay {
     position: fixed;
@@ -1476,6 +1498,19 @@ tbody tr:nth-child(even) {
     line-height: 1.6;
 }
 
+/* V14新增: 关于弹窗技术支持/开源项目链接样式 */
+.about-link {
+    color: var(--color-primary);
+    text-decoration: none;
+    word-break: break-all;
+    -ms-flex-positive: 1;
+    flex-grow: 1;
+}
+
+.about-link:hover {
+    text-decoration: underline;
+}
+
 /* ---- 窄屏适配 ---- */
 @media (max-width: 767px) {
     .header {
@@ -1491,6 +1526,15 @@ tbody tr:nth-child(even) {
         -webkit-box-pack: center;
         -ms-flex-pack: center;
         justify-content: center;
+    }
+    /* V15修复: 移动端网卡下拉框与详情分两行全宽显示,文字完整换行不撑宽卡片 */
+    .adapter-input-row select,
+    .adapter-info {
+        -webkit-box-flex: 1;
+        -ms-flex: 1 1 100%;
+        flex: 1 1 100%;
+        width: 100%;
+        max-width: 100%;
     }
     .footer {
         -webkit-box-orient: vertical;
@@ -1523,5 +1567,50 @@ tbody tr:nth-child(even) {
     }
     .header h1 {
         font-size: var(--font-size-lg);
+    }
+    /* V15修复: 极窄屏表单改纵向排列,标签与控件各占整行,避免固定 140px 标签挤压输入框 */
+    /* V15修订: 删除 .form-control { flex:1 1 100% } 导致的纵向主轴高度异常,改为 flex:0 0 auto 固定高度 */
+    .form-row {
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+        -ms-flex-wrap: nowrap;
+        flex-wrap: nowrap;
+        -webkit-box-align: stretch;
+        -ms-flex-align: stretch;
+        align-items: stretch;
+        gap: 6px;
+    }
+    .form-label {
+        -ms-flex: 0 0 auto;
+        flex: 0 0 auto;
+        width: 100%;
+        max-width: 100%;
+        text-align: left;
+        padding-top: 0;
+    }
+    .form-control {
+        -webkit-box-flex: 0;
+        -ms-flex: 0 0 auto;
+        flex: 0 0 auto;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+    /* V15修订: 极窄屏下网卡输入行、DNS 输入区及按钮容器宽度不超过 100%,控件不得排到卡片右侧 */
+    .adapter-input-row,
+    .dns-input-row,
+    .dns-group {
+        -ms-flex-wrap: wrap;
+        flex-wrap: wrap;
+        max-width: 100%;
+    }
+    .adapter-input-row select,
+    .dns-input-row input {
+        -ms-flex: 1 1 100%;
+        flex: 1 1 100%;
+        width: 100%;
+        max-width: 100%;
     }
 }

@@ -101,7 +101,8 @@
             "footer.secure_run": "安全运行中", // V10新增
             "footer.local_time": "本机时间",   // V10新增: 前端实时更新
             // V12新增: 底部右侧"产品名 V版本号｜版权"模板,%s 占位符由前端填充
-            "footer.right_template": "DacatDHCP %s｜© %s",
+            // V14调整: 模板改为"DacatDHCP V版本号 · © 年份 ",年份动态生成,版权(DACAT.CC)作为外链由前端追加
+            "footer.right_template": "DacatDHCP %s · © %s ",
             // V12新增: 安全提示分段文案(标题/警示/详情/适用场景)
             "security.warning": "警告",
             "security.detail": "本工具仅用于直连、测试网络或隔离网络,禁止在已有 DHCP 服务的生产网络中启用。",
@@ -140,7 +141,10 @@
             "about.copyright": "版权",
             "about.description": "DacatDHCP 是一款 Windows 便携式轻量 DHCP 服务工具，通过单 EXE 提供图形化管理界面。",
             "about.support": "正式支持 Windows 10/11、Windows Server 2016+",
-            "about.warning": "本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。"
+            "about.warning": "本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。",
+            // V14新增: 关于弹窗技术支持与开源项目链接文案
+            "about.tech_support": "技术支持",
+            "about.open_source": "开源项目"
         },
         "en-US": {
             "_label": "EN",
@@ -225,7 +229,8 @@
             "footer.secure_run": "Running securely",
             "footer.local_time": "Local Time",
             // V12: footer right template "ProductName Vversion|© copyright"
-            "footer.right_template": "DacatDHCP %s|© %s",
+            // V14调整: template changed to "DacatDHCP Vversion · © year ", year is dynamic, copyright (DACAT.CC) appended as link
+            "footer.right_template": "DacatDHCP %s · © %s ",
             // V12: security notice segmented text (title/warning/detail/scope)
             "security.warning": "Warning",
             "security.detail": "This tool is intended only for direct, test, or isolated networks. Do not enable it on production networks that already have a DHCP service.",
@@ -260,7 +265,10 @@
             "about.copyright": "Copyright",
             "about.description": "DacatDHCP is a portable lightweight DHCP service tool for Windows, providing a graphical management interface in a single EXE.",
             "about.support": "Officially supports Windows 10/11, Windows Server 2016+",
-            "about.warning": "This tool is only for self-hosted, test, or isolated networks. Do not enable it on production networks that already have a DHCP service."
+            "about.warning": "This tool is only for self-hosted, test, or isolated networks. Do not enable it on production networks that already have a DHCP service.",
+            // V14新增: about dialog technical support and open source project link labels
+            "about.tech_support": "Technical Support",
+            "about.open_source": "Open Source"
         }
     };
 
