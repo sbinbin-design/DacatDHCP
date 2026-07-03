@@ -16,7 +16,7 @@ pushd "%ROOT%" || ( set "EXITCODE=1" & goto :cleanup )
 echo === DacatDHCP Build ===
 
 REM 0. Validate Go version is 1.26.4
-echo [0/6] Validating Go version...
+echo [0/7] Validating Go version...
 for /f "tokens=3" %%v in ('go version 2^>nul') do set GOVER=%%v
 if "!GOVER!"=="" (
     echo ERROR: Go is not installed or not in PATH.
@@ -33,7 +33,7 @@ if not "!GOVER!"=="1.26.4" (
 echo Go version !GOVER! validated.
 
 REM 1. Check PE resource file exists
-echo [1/6] Checking PE resource...
+echo [1/7] Checking PE resource...
 if not exist "cmd\dacatdhcp\rsrc_windows_amd64.syso" (
     echo ERROR: cmd\dacatdhcp\rsrc_windows_amd64.syso not found.
     echo Run scripts\generate_resource.bat first to generate it.
@@ -42,7 +42,7 @@ if not exist "cmd\dacatdhcp\rsrc_windows_amd64.syso" (
 )
 
 REM 2. Check gofmt (no unformatted files allowed)
-echo [2/6] Checking gofmt...
+echo [2/7] Checking gofmt...
 for /f "delims=" %%f in ('gofmt -l . 2^>nul') do (
     echo ERROR: Unformatted file: %%f
     echo Run: gofmt -w %%f
@@ -54,7 +54,7 @@ if !EXITCODE! neq 0 (
 )
 
 REM 3. Run go vet
-echo [3/6] Running go vet...
+echo [3/7] Running go vet...
 go vet ./...
 if errorlevel 1 (
     echo ERROR: go vet failed
@@ -64,7 +64,7 @@ if errorlevel 1 (
 )
 
 REM 4. Run tests
-echo [4/6] Running tests...
+echo [4/7] Running tests...
 go test ./... -count=1
 if errorlevel 1 (
     echo ERROR: go test failed
@@ -74,7 +74,7 @@ if errorlevel 1 (
 )
 
 REM 5. Build final EXE (GUI subsystem: no CMD window), output to dist directory
-echo [5/6] Building dist\DacatDHCP.exe...
+echo [5/7] Building dist\DacatDHCP.exe...
 if not exist "dist" mkdir "dist"
 set CGO_ENABLED=0
 set GOOS=windows
@@ -88,7 +88,7 @@ if errorlevel 1 (
 )
 
 REM 6. Validate EXE VersionInfo against versioninfo.json (single version source)
-echo [6/6] Validating EXE VersionInfo...
+echo [6/7] Validating EXE VersionInfo...
 if not exist "dist\DacatDHCP.exe" (
     echo ERROR: Build artifact dist\DacatDHCP.exe not found.
     set "EXITCODE=1"
@@ -103,7 +103,18 @@ if errorlevel 1 (
     goto :cleanup
 )
 
-echo === Build Complete: dist\DacatDHCP.exe ===
+REM 7. Generate release ZIP (DacatDHCP.exe + LICENSE + NOTICE + TRADEMARKS.md)
+echo [7/7] Generating release ZIP...
+REM Version number read from internal\version\versioninfo.json (single version source, no hardcoding)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$j=Get-Content 'internal\version\versioninfo.json' -Raw -Encoding UTF8|ConvertFrom-Json; $ver=$j.StringFileInfo.ProductVersion; $zip='dist\DacatDHCP-v'+$ver+'-windows-amd64.zip'; $tmp='dist\_zip_tmp'; if(Test-Path $tmp){Remove-Item $tmp -Recurse -Force}; New-Item -ItemType Directory -Path $tmp -Force|Out-Null; Copy-Item 'dist\DacatDHCP.exe' $tmp; Copy-Item 'LICENSE' $tmp; Copy-Item 'NOTICE' $tmp; Copy-Item 'TRADEMARKS.md' $tmp; if(Test-Path $zip){Remove-Item $zip -Force}; Compress-Archive -Path ($tmp+'\*') -DestinationPath $zip -Force; Remove-Item $tmp -Recurse -Force; Write-Host ('Release ZIP: '+$zip)"
+if errorlevel 1 (
+    echo ERROR: Release ZIP generation failed.
+    set "EXITCODE=!ERRORLEVEL!"
+    if "!EXITCODE!"=="0" set "EXITCODE=1"
+    goto :cleanup
+)
+
+echo === Build Complete: dist\DacatDHCP.exe + release ZIP ===
 
 :cleanup
 popd

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Config 持久化配置
@@ -48,6 +49,7 @@ type AppServer struct {
 	closing        bool   // V2: 退出过程中拒绝新的 Web API 操作
 	onStatusChange func() // V3: DHCP 状态变化时回调（用于更新托盘 Tooltip）
 	isAdmin        bool   // V10新增: 进程是否以管理员权限运行(由 main 注入),前端底部栏展示真实权限状态
+	csrfToken      string // P0安全: 每次启动生成的 CSRF 令牌,注入首页 meta,写接口校验 X-Dacat-CSRF-Token
 	// V16新增测试钩子: 非 nil 时覆盖默认的临时文件写入逻辑(Write/Sync/Close)
 	// 仅测试使用,生产代码不得设置
 	testSaveConfigWriter saveConfigWriter
@@ -96,12 +98,19 @@ func NewAppServer(dataDir string, webFS fs.FS) (*AppServer, error) {
 		logger.Log(format, args...)
 	})
 
+	// P0安全: 每次启动使用 crypto/rand 生成 CSRF 令牌,不写入配置/日志/接口
+	csrfToken, err := generateCSRFToken()
+	if err != nil {
+		return nil, fmt.Errorf("生成 CSRF 令牌失败: %v", err)
+	}
+
 	return &AppServer{
 		dhcpSrv:   dhcpSrv,
 		logger:    logger,
 		config:    config,
 		configDir: dataDir,
 		webFS:     webFS,
+		csrfToken: csrfToken,
 	}, nil
 }
 
@@ -115,9 +124,9 @@ func (a *AppServer) PostInit() {
 	})
 }
 
-// Start 启动 HTTP 服务器（V1修复: 先绑定端口，确认成功后再开始服务）
-// 返回监听地址，供调用方在确认绑定成功后打开浏览器
-func (a *AppServer) Start() error {
+// buildMux 构建路由 mux(不含安全中间件)
+// P0安全: 提取为独立方法,供 Start 和安全测试使用,路由定义保持不变
+func (a *AppServer) buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// 静态文件
@@ -141,6 +150,24 @@ func (a *AppServer) Start() error {
 	mux.HandleFunc("/api/pool-recommend", a.handlePoolRecommend) // V1修复: 后端计算地址池推荐
 	mux.HandleFunc("/api/version", a.handleVersion)              // 版本信息：读取 internal/version 唯一源
 
+	return mux
+}
+
+// expectedHostValue P0安全: 返回预期的 Host 头值(与实际监听地址一致)
+// 优先使用 listener 实际地址,listener 未设置时(测试)回退到配置端口
+func (a *AppServer) expectedHostValue() string {
+	if a.listener != nil {
+		return a.listener.Addr().String()
+	}
+	return fmt.Sprintf("127.0.0.1:%d", a.config.WebPort)
+}
+
+// Start 启动 HTTP 服务器（V1修复: 先绑定端口，确认成功后再开始服务）
+// 返回监听地址，供调用方在确认绑定成功后打开浏览器
+// P0安全: 所有请求经 securityMiddleware 校验,http.Server 增加超时和 MaxHeaderBytes
+func (a *AppServer) Start() error {
+	handler := a.securityMiddleware(a.buildMux())
+
 	addr := fmt.Sprintf("127.0.0.1:%d", a.config.WebPort)
 
 	// V1修复: 先尝试绑定端口，端口占用时明确报错
@@ -150,7 +177,15 @@ func (a *AppServer) Start() error {
 	}
 
 	a.listener = listener
-	a.httpSrv = &http.Server{Handler: mux}
+	// P0安全: 增加超时和 MaxHeaderBytes,仍只监听 127.0.0.1
+	a.httpSrv = &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16384,
+	}
 
 	a.logger.Log("管理页面已启动: http://%s", addr)
 
@@ -266,6 +301,8 @@ func (a *AppServer) Logf(format string, args ...interface{}) {
 }
 
 // handleIndex 处理首页
+// P0安全: 注入 CSRF 令牌到 <meta name="dacat-csrf-token">,设置 Cache-Control: no-store
+// 令牌不写入配置、日志或接口,仅通过首页 meta 暴露给同源前端
 func (a *AppServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -276,8 +313,13 @@ func (a *AppServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "页面加载失败", http.StatusInternalServerError)
 		return
 	}
+	// P0安全: 将占位符替换为真实 CSRF 令牌(仅替换一次,避免影响其他 meta)
+	html := strings.Replace(string(data), csrfMetaPlaceholder,
+		fmt.Sprintf(`<meta name="dacat-csrf-token" content="%s">`, a.csrfToken), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
+	// P0安全: 首页禁止缓存,避免令牌被缓存复用
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write([]byte(html))
 }
 
 // handleStatic 处理静态文件
@@ -330,7 +372,12 @@ func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var cfg Config
-		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		// P0安全: 使用 decodeJSONBody 严格解码,拒绝未知字段、多个对象、尾随垃圾和超限请求体
+		if err := decodeJSONBody(r, &cfg); err != nil {
+			if err == errPayloadTooLarge {
+				writeError(w, http.StatusRequestEntityTooLarge, errCodePayloadTooLarge, "请求体过大")
+				return
+			}
 			writeError(w, http.StatusBadRequest, errCodeInvalidConfig, "配置格式错误")
 			return
 		}
@@ -429,8 +476,13 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 		Gateway      string   `json:"gateway"`     // V2新增: 可选网关
 		DNSServers   []string `json:"dns_servers"` // V2新增: 可选 DNS 列表
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// P0安全: 使用 decodeJSONBody 严格解码,拒绝未知字段、多个对象、尾随垃圾和超限请求体
+	if err := decodeJSONBody(r, &req); err != nil {
 		a.mu.Unlock()
+		if err == errPayloadTooLarge {
+			writeError(w, http.StatusRequestEntityTooLarge, errCodePayloadTooLarge, "请求体过大")
+			return
+		}
 		writeError(w, http.StatusBadRequest, errCodeInvalidRequest, "请求格式错误")
 		return
 	}
@@ -538,9 +590,20 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 // handleStop 处理停止 DHCP 服务
 // V6: 禁止持有 a.mu 调用 dhcpSrv.Stop()（Stop 内部等待协程退出，可能触发回调死锁）
 // V13: 方法不允许统一使用 writeError
+// P0安全收口: 明确要求空正文或空 JSON 对象 {},禁止携带超大或无关正文
 func (a *AppServer) handleStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
+		return
+	}
+
+	// P0安全收口: 校验正文必须为空或 {},禁止携带无关正文
+	if err := requireEmptyBody(r); err != nil {
+		if err == errPayloadTooLarge {
+			writeError(w, http.StatusRequestEntityTooLarge, errCodePayloadTooLarge, "请求体过大")
+			return
+		}
+		writeError(w, http.StatusBadRequest, errCodeInvalidRequest, "请求格式错误")
 		return
 	}
 
@@ -611,9 +674,20 @@ func (a *AppServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 // handleLogsClear V12新增: 清空日志接口
 // 调用 Logger.Clear 在互斥锁内清空内存环形缓冲区并截断当前日志文件
 // 成功后前端立即刷新日志,禁止只清空前端 DOM 被下一次轮询恢复
+// P0安全收口: 明确要求空正文或空 JSON 对象 {},禁止携带超大或无关正文
 func (a *AppServer) handleLogsClear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
+		return
+	}
+
+	// P0安全收口: 校验正文必须为空或 {},禁止携带无关正文
+	if err := requireEmptyBody(r); err != nil {
+		if err == errPayloadTooLarge {
+			writeError(w, http.StatusRequestEntityTooLarge, errCodePayloadTooLarge, "请求体过大")
+			return
+		}
+		writeError(w, http.StatusBadRequest, errCodeInvalidRequest, "请求格式错误")
 		return
 	}
 

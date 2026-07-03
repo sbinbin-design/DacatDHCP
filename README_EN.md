@@ -108,12 +108,21 @@ The build script validates that the Go version is exactly 1.26.4 and verifies th
 
 ## Single-EXE Release Notes
 
-The release package contains only `DacatDHCP.exe`:
+The application itself is a single EXE — running requires only `DacatDHCP.exe`:
 
 - All frontend HTML/CSS/JS, icons, language resources, and theme scripts are embedded into the binary via `go:embed`.
 - No external CDN, online fonts, or runtime network dependencies.
 - Built with `-ldflags="-H=windowsgui"` as a Windows GUI subsystem binary — no visible CMD window.
 - Version info (product name, version, copyright) is written into the PE resource via `goversioninfo` and is visible in file properties.
+
+The formal release archive (`dist/DacatDHCP-v<version>-windows-amd64.zip`) must include the following files:
+
+- `DacatDHCP.exe` — main program
+- `LICENSE` — Apache License 2.0 full text
+- `NOTICE` — copyright and attribution notice
+- `TRADEMARKS.md` — trademark notice
+
+`scripts/build.bat` automatically generates this ZIP archive after building.
 
 ## Directory Structure
 
@@ -155,3 +164,11 @@ A: An overlapping gateway and pool cause client configuration conflicts. The pro
 
 **Q: Does the log content get translated when switching languages?**
 A: No. DHCP raw logs remain as-is; only UI labels and program-generated prompts are translated.
+
+## License
+
+DacatDHCP is licensed under the Apache License 2.0.
+
+Copyright 2026 DACAT.CC.
+
+Redistributions must retain the applicable license, copyright, and attribution notices. See [LICENSE](LICENSE), [NOTICE](NOTICE), and [TRADEMARKS.md](TRADEMARKS.md) for details.

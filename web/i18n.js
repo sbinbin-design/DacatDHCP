@@ -341,7 +341,17 @@
         // V14新增: DNS 数量超限独立错误码,前端直接提供完整中英文文案,禁止"当前N个"中文混排
         "dns_too_many":        {zh: "DNS 服务器最多允许 3 个",                           en: "DNS servers allow at most 3 entries"},
         // V14新增: 配置写入文件失败独立错误码,启动后保存配置失败时使用
-        "config_save_failed":  {zh: "配置保存失败",                                      en: "Failed to save configuration"}
+        "config_save_failed":  {zh: "配置保存失败",                                      en: "Failed to save configuration"},
+        // P0安全新增: 写接口 CSRF 令牌缺失或不匹配,提示用户刷新页面重新获取令牌
+        "csrf_token_invalid":  {zh: "页面安全凭据已失效，请刷新页面",                    en: "Page security credential has expired, please refresh the page"},
+        // P0安全新增: Host 头与监听地址不一致(DNS Rebinding 防护)
+        "host_rejected":       {zh: "请求来源被拒绝",                                    en: "Request source rejected"},
+        // P0安全新增: Origin/Referer 来源非法
+        "origin_rejected":     {zh: "请求来源被拒绝",                                    en: "Request source rejected"},
+        // P0安全新增: 写接口 Content-Type 非 application/json
+        "unsupported_media_type": {zh: "不支持的媒体类型",                               en: "Unsupported media type"},
+        // P0安全新增: 请求体超过 64KB
+        "payload_too_large":   {zh: "请求体过大",                                        en: "Request body too large"}
     };
 
     // 当前语言,默认 zh-CN

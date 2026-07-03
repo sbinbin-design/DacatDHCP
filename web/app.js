@@ -20,12 +20,39 @@
 
     // ---- 工具函数 ----
 
+    // P0安全: 从 <meta name="dacat-csrf-token"> 读取 CSRF 令牌
+    // 使用 getElementsByTagName 兼容 IE11(不支持 querySelector meta 选择器的属性过滤)
+    // 令牌由后端 handleIndex 注入,写接口 AJAX 必须携带 X-Dacat-CSRF-Token
+    function getCSRFToken() {
+        var metas = document.getElementsByTagName("meta");
+        if (!metas) return "";
+        for (var i = 0; i < metas.length; i++) {
+            if (metas[i].getAttribute("name") === "dacat-csrf-token") {
+                return metas[i].getAttribute("content") || "";
+            }
+        }
+        return "";
+    }
+
+    // P0安全: 判断是否为写方法(需携带 CSRF 令牌)
+    function isWriteMethod(method) {
+        return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+    }
+
     // 发送 AJAX 请求
     // V11新增: 错误回调传入 {message, code} 对象,优先使用 code 翻译
+    // P0安全: 写方法(POST/PUT/PATCH/DELETE)统一携带 X-Dacat-CSRF-Token,后端校验失败返回 403 + csrf_token_invalid
     function ajax(method, url, data, callback) {
         var xhr = new XMLHttpRequest();
         xhr.open(method, url, true);
         xhr.setRequestHeader("Content-Type", "application/json");
+        // P0安全: 写方法携带 CSRF 令牌,令牌从首页 meta 读取
+        if (isWriteMethod(method)) {
+            var token = getCSRFToken();
+            if (token) {
+                xhr.setRequestHeader("X-Dacat-CSRF-Token", token);
+            }
+        }
         xhr.onreadystatechange = function () {
             if (xhr.readyState === 4) {
                 if (xhr.status === 200) {
@@ -146,9 +173,86 @@
                "-" + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
     }
 
+    // ---- P0安全: 事件绑定(移除 HTML 内联 onclick/onchange,统一通过 addEventListener/attachEvent) ----
+
+    // 兼容 IE11 (attachEvent) 和现代浏览器 (addEventListener) 的点击事件绑定
+    function bindClick(id, handler) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (el.attachEvent) {
+            el.attachEvent("onclick", handler);
+        } else {
+            el.addEventListener("click", handler);
+        }
+    }
+
+    // 兼容 IE11 和现代浏览器的 change 事件绑定
+    function bindChange(id, handler) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (el.attachEvent) {
+            el.attachEvent("onchange", handler);
+        } else {
+            el.addEventListener("change", handler);
+        }
+    }
+
+    // P0安全: 统一绑定所有按钮事件,替代 HTML 内联 onclick/onchange
+    // CSP script-src 不依赖 unsafe-inline,所有事件通过 addEventListener/attachEvent 绑定
+    function bindEvents() {
+        // 顶部导航: 语言切换、主题、设置、关于
+        bindClick("lang-zh", function () { switchLang("zh-CN"); });
+        bindClick("lang-en", function () { switchLang("en-US"); });
+        bindClick("btn-theme", function () { toggleTheme(); });
+        bindClick("btn-settings", function () { openSettings(); });
+        bindClick("btn-about", function () { openAbout(); });
+
+        // 服务状态卡: 启动/停止、刷新信息、刷新租约
+        bindClick("btn-start", function () { startService(); });
+        bindClick("btn-stop", function () { stopService(); });
+        bindClick("btn-refresh-all", function () { refreshAll(); });
+        bindClick("btn-refresh-leases", function () { refreshLeases(); });
+
+        // DNS 添加/清除
+        bindClick("btn-dns-add", function () { addDnsServer(); });
+        bindClick("btn-dns-clear", function () { clearDnsServers(); });
+
+        // 日志导出/清空
+        bindClick("btn-export-logs", function () { exportLogs(); });
+        bindClick("btn-clear-logs", function () { clearLogs(); });
+
+        // 设置弹窗: 关闭按钮和底部关闭按钮
+        bindClick("btn-settings-close", function () { closeSettings(); });
+        bindClick("btn-settings-done", function () { closeSettings(); });
+
+        // 关于弹窗: 关闭按钮和底部关闭按钮
+        bindClick("btn-about-close", function () { closeAbout(); });
+        bindClick("btn-about-done", function () { closeAbout(); });
+
+        // 设置弹窗语言单选变化
+        bindChange("settings-lang-zh", function () { onSettingsLangChange("zh-CN"); });
+        bindChange("settings-lang-en", function () { onSettingsLangChange("en-US"); });
+    }
+
+    // P0安全: 检测 CSRF 令牌失效错误,显示专用提示(不附加失败前缀)
+    // 返回 true 表示已处理(调用方应 return),false 表示非 CSRF 错误继续常规处理
+    function handleCSRFError(err) {
+        if (typeof err === "object" && err && err.code === "csrf_token_invalid") {
+            // P0安全收口: 直接使用 teByCode 按错误码翻译,不调用 I18N.t(那是 data-i18n 键查找)
+            // teByCode 从 errCodeMap 返回中英文提示,禁止直接显示错误码或后端英文消息
+            var backendMsg = err.message || "";
+            var translated = window.I18N ? I18N.teByCode("csrf_token_invalid", backendMsg) : "页面安全凭据已失效，请刷新页面";
+            alert(translated);
+            return true;
+        }
+        return false;
+    }
+
     // ---- 页面初始化 ----
 
     function init() {
+        // P0安全: 统一绑定所有按钮事件(替代 HTML 内联 onclick/onchange)
+        bindEvents();
         // 新增: 应用国际化文案(根据 localStorage 保存的语言)并刷新语言分段控件
         if (window.I18N) {
             I18N.applyTranslations();
@@ -593,6 +697,11 @@
         }, function (err, resp) {
             setBtnText(btnStart, I18N ? I18N.t("status.start_dhcp") : "启动 DHCP");
             if (err) {
+                // P0安全: CSRF 令牌失效单独提示"请刷新页面",不附加"启动失败:"前缀
+                if (handleCSRFError(err)) {
+                    btnStart.disabled = false;
+                    return;
+                }
                 // V11重构: err 为 {message, code} 对象,优先按 code 翻译,回退到中文片段翻译
                 var errMsg = (typeof err === "object" && err) ? err.message : String(err);
                 var errCode = (typeof err === "object" && err) ? err.code : "";
@@ -626,6 +735,11 @@
         post("/api/stop", null, function (err, resp) {
             setBtnText(btnStop, I18N ? I18N.t("status.stop") : "停止服务");
             if (err) {
+                // P0安全: CSRF 令牌失效单独提示"请刷新页面",不附加"停止失败:"前缀
+                if (handleCSRFError(err)) {
+                    btnStop.disabled = false;
+                    return;
+                }
                 // V11重构: err 为 {message, code} 对象,优先按 code 翻译,回退到中文片段翻译
                 var errMsg = (typeof err === "object" && err) ? err.message : String(err);
                 var errCode = (typeof err === "object" && err) ? err.code : "";
@@ -842,6 +956,10 @@
         post("/api/logs/clear", null, function (err, resp) {
             if (btn) btn.disabled = false;
             if (err) {
+                // P0安全: CSRF 令牌失效单独提示"请刷新页面",不附加"清空日志失败:"前缀
+                if (handleCSRFError(err)) {
+                    return;
+                }
                 // V11重构: err 为 {message, code} 对象,优先按 code 翻译,回退到中文片段翻译
                 var errMsg = (typeof err === "object" && err) ? err.message : String(err);
                 var errCode = (typeof err === "object" && err) ? err.code : "";

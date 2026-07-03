@@ -4,6 +4,8 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- P0安全: CSRF 令牌占位符,由后端 handleIndex 替换为真实令牌,前端 AJAX 读取后写入 X-Dacat-CSRF-Token -->
+    <meta name="dacat-csrf-token" content="">
     <title>DacatDHCP</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css">
@@ -32,20 +34,20 @@
             <div class="header-actions">
                 <!-- V11重构: 语言切换改为无外框"中文｜EN"双项切换 -->
                 <div class="lang-seg" role="group">
-                    <button type="button" id="lang-zh" class="lang-seg-btn" onclick="switchLang('zh-CN')" data-i18n="settings.lang.zh">中文</button>
+                    <button type="button" id="lang-zh" class="lang-seg-btn" data-i18n="settings.lang.zh">中文</button>
                     <span class="lang-seg-sep">｜</span>
-                    <button type="button" id="lang-en" class="lang-seg-btn" onclick="switchLang('en-US')">EN</button>
+                    <button type="button" id="lang-en" class="lang-seg-btn">EN</button>
                 </div>
                 <!-- V11重构: 主题/设置/关于统一使用内联SVG图标,设置和关于保留图标加文字 -->
-                <button type="button" class="btn-icon btn-theme" id="btn-theme" onclick="toggleTheme()" aria-label="">
+                <button type="button" class="btn-icon btn-theme" id="btn-theme" aria-label="">
                     <svg class="theme-icon icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                     <svg class="theme-icon icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
                 </button>
-                <button type="button" class="btn-icon btn-with-text" id="btn-settings" onclick="openSettings()">
+                <button type="button" class="btn-icon btn-with-text" id="btn-settings">
                     <svg class="btn-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     <span data-i18n="nav.settings">设置</span>
                 </button>
-                <button type="button" class="btn-icon btn-with-text" id="btn-about" onclick="openAbout()">
+                <button type="button" class="btn-icon btn-with-text" id="btn-about">
                     <svg class="btn-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                     <span data-i18n="nav.about">关于</span>
                 </button>
@@ -95,12 +97,12 @@
                 <div id="error-msg" class="error-msg" style="display:none;"></div>
                 <!-- V12: 启动/停止按钮补充播放和停止内联SVG图标,中文启动文案改为"启动 DHCP" -->
                 <div class="btn-stack">
-                    <button id="btn-start" class="btn-full btn-start" onclick="startService()">
+                    <button id="btn-start" class="btn-full btn-start">
                         <svg class="btn-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                         <!-- V12: data-i18n 移到 span 上,避免 applyTranslations 的 textContent 覆盖 SVG 图标 -->
                         <span data-i18n="status.start_dhcp">启动 DHCP</span>
                     </button>
-                    <button id="btn-stop" class="btn-full btn-stop" onclick="stopService()" disabled>
+                    <button id="btn-stop" class="btn-full btn-stop" disabled>
                         <svg class="btn-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                         <span data-i18n="status.stop">停止服务</span>
                     </button>
@@ -109,11 +111,11 @@
                 <div class="quick-actions">
                     <div class="quick-title" data-i18n="quick.title">快捷操作</div>
                     <div class="quick-btns">
-                        <button type="button" class="btn-outline" onclick="refreshAll()">
+                        <button type="button" class="btn-outline" id="btn-refresh-all">
                             <svg class="btn-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                             <span data-i18n="quick.refresh_status">刷新信息</span>
                         </button>
-                        <button type="button" class="btn-outline" onclick="refreshLeases()">
+                        <button type="button" class="btn-outline" id="btn-refresh-leases">
                             <svg class="btn-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
                             <span data-i18n="quick.refresh_leases">刷新租约</span>
                         </button>
@@ -171,11 +173,11 @@
                             <div class="dns-input-row">
                                 <input type="text" id="dns-servers" data-i18n-placeholder="config.dns.placeholder" placeholder="多个 IPv4 用英文逗号分隔，最多 3 个">
                                 <!-- V12: 添加/清除按钮补充内联SVG图标 -->
-                                <button type="button" class="btn-mini" id="btn-dns-add" onclick="addDnsServer()">
+                                <button type="button" class="btn-mini" id="btn-dns-add">
                                     <svg class="btn-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                                     <span data-i18n="config.dns.add">添加</span>
                                 </button>
-                                <button type="button" class="btn-mini btn-mini-ghost" id="btn-dns-clear" onclick="clearDnsServers()">
+                                <button type="button" class="btn-mini btn-mini-ghost" id="btn-dns-clear">
                                     <svg class="btn-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                     <span data-i18n="config.dns.clear">清除</span>
                                 </button>
@@ -238,12 +240,12 @@
                     </label>
                     <div class="log-actions-right">
                         <!-- V12: 导出/清空按钮补充内联SVG图标 -->
-                        <button type="button" class="btn-mini" onclick="exportLogs()">
+                        <button type="button" class="btn-mini" id="btn-export-logs">
                             <svg class="btn-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             <span data-i18n="logs.export">导出日志</span>
                         </button>
                         <!-- V12: 清空日志已实现真实后端接口,启用按钮 -->
-                        <button type="button" class="btn-mini btn-mini-ghost" id="btn-clear-logs" onclick="clearLogs()">
+                        <button type="button" class="btn-mini btn-mini-ghost" id="btn-clear-logs">
                             <svg class="btn-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             <span data-i18n="logs.clear">清空日志</span>
                         </button>
@@ -299,19 +301,19 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 data-i18n="settings.title">设置</h3>
-                <button type="button" class="modal-close" onclick="closeSettings()">×</button>
+                <button type="button" class="modal-close" id="btn-settings-close">×</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
                     <label data-i18n="settings.language">界面语言</label>
                     <div class="radio-group">
-                        <label class="radio-label"><input type="radio" name="settings-lang" value="zh-CN" onchange="onSettingsLangChange('zh-CN')"><span data-i18n="settings.lang.zh">中文</span></label>
-                        <label class="radio-label"><input type="radio" name="settings-lang" value="en-US" onchange="onSettingsLangChange('en-US')"><span data-i18n="settings.lang.en">English</span></label>
+                        <label class="radio-label"><input type="radio" name="settings-lang" id="settings-lang-zh" value="zh-CN"><span data-i18n="settings.lang.zh">中文</span></label>
+                        <label class="radio-label"><input type="radio" name="settings-lang" id="settings-lang-en" value="en-US"><span data-i18n="settings.lang.en">English</span></label>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn-primary" onclick="closeSettings()" data-i18n="settings.close">关闭</button>
+                <button type="button" class="btn-primary" id="btn-settings-done" data-i18n="settings.close">关闭</button>
             </div>
         </div>
     </div>
@@ -321,7 +323,7 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 data-i18n="about.title">关于</h3>
-                <button type="button" class="modal-close" onclick="closeAbout()">×</button>
+                <button type="button" class="modal-close" id="btn-about-close">×</button>
             </div>
             <div class="modal-body">
                 <p class="about-desc" data-i18n="about.description">DacatDHCP 是一款 Windows 便携式轻量 DHCP 服务工具，通过单 EXE 提供图形化管理界面。</p>
@@ -338,7 +340,7 @@
                 <p class="about-warning" data-i18n="about.warning">本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn-primary" onclick="closeAbout()" data-i18n="settings.close">关闭</button>
+                <button type="button" class="btn-primary" id="btn-about-done" data-i18n="settings.close">关闭</button>
             </div>
         </div>
     </div>
