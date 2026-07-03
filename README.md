@@ -171,4 +171,4 @@ DacatDHCP 基于 Apache License 2.0 开源。
 
 Copyright 2026 DACAT.CC.
 
-再发布时必须保留适用的许可证、版权和归属声明。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE) 和 [TRADEMARKS.md](TRADEMARKS.md)。
+再发布时必须保留适用的许可证、版权和归属声明。详见 [LICENSE](LICENSE)、[LICENSE.zh-CN.md](LICENSE.zh-CN.md)、[NOTICE](NOTICE) 和 [TRADEMARKS.md](TRADEMARKS.md)。
