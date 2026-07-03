@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="web/dhcp.ico" width="120" alt="DacatDHCP">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/dhcp-white.svg">
+    <img src="web/dhcp.ico" width="120" alt="DacatDHCP">
+  </picture>
 </p>
 
 <h1 align="center">DacatDHCP</h1>
