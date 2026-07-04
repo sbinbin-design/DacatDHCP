@@ -167,6 +167,17 @@ function respondFirstPoolRecommend(start, end) {
     xhr._respond(200, JSON.stringify({ pool_start: start, pool_end: end }));
 }
 
+// 语言新增: 响应最早的 PUT /api/language 请求,使其触发 applyLanguageChange 回调
+// switchLang/onSettingsLangChange 先调用 PUT /api/language,成功后才执行 applyLanguageChange
+function respondLanguagePut(lang) {
+    const idx = xhrQueue.findIndex(function (x) {
+        return x._method === "PUT" && x._url && x._url.indexOf("/api/language") >= 0;
+    });
+    if (idx < 0) throw new Error("无 pending PUT /api/language 请求");
+    const xhr = xhrQueue.splice(idx, 1)[0];
+    xhr._respond(200, JSON.stringify({ language: lang }));
+}
+
 function getPoolValues() {
     return {
         start: getElement("pool-start").value,
@@ -293,8 +304,10 @@ test("语言切换后, 旧 pool-recommend 响应应被丢弃", function () {
     global.THEME = themeMock; // app.js 内部直接引用 THEME,需设为全局变量
 
     setAdapter("AdapterA");
-    // 调用语言切换 (applyLanguageChange 会递增 poolReqSeq)
+    // 调用语言切换 (先 PUT /api/language,成功后 applyLanguageChange 递增 poolReqSeq)
     global.window.switchLang("en-US");
+    // 语言新增: 响应 PUT /api/language 请求,触发 applyLanguageChange 回调
+    respondLanguagePut("en-US");
     // A 的延迟响应返回 (应被丢弃,语言切换使 poolReqSeq 递增)
     respondPoolRecommendFor("AdapterA", "192.168.1.2", "192.168.1.100");
     const vals = getPoolValues();
@@ -470,6 +483,97 @@ test("较新请求先返回新列表, 较旧请求后返回旧列表, 随后切�
     assert.ok(finalHasNew, "切换语言后必须继续显示新列表, AdapterNew 应保留");
     const finalHasOld = sel3.options.some(function (opt) { return opt.value === "AdapterOld"; });
     assert.strictEqual(finalHasOld, false, "切换语言后旧列表不得重新渲染, AdapterOld 不应出现");
+
+    teardownI18NMock();
+});
+
+// ---- 场景 8: 语言切换连续点击防乱序 ----
+console.log("\n[场景 8] 语言切换连续点击: 旧响应不得覆盖用户最后一次选择");
+
+// 语言新增: 响应最早的 PUT /api/language 请求,指定状态码和响应体
+function respondLanguagePutWithStatus(status, body) {
+    const idx = xhrQueue.findIndex(function (x) {
+        return x._method === "PUT" && x._url && x._url.indexOf("/api/language") >= 0;
+    });
+    if (idx < 0) throw new Error("无 pending PUT /api/language 请求");
+    const xhr = xhrQueue.splice(idx, 1)[0];
+    xhr._respond(status, body);
+}
+
+// 语言新增: 响应最早的 GET /api/language 请求
+function respondLanguageGet(lang) {
+    const idx = xhrQueue.findIndex(function (x) {
+        return x._method === "GET" && x._url && x._url.indexOf("/api/language") >= 0;
+    });
+    if (idx < 0) throw new Error("无 pending GET /api/language 请求");
+    const xhr = xhrQueue.splice(idx, 1)[0];
+    xhr._respond(200, JSON.stringify({ language: lang }));
+}
+
+test("连续切换语言, 旧响应不得覆盖用户最后一次选择", function () {
+    resetState();
+    setupI18NMock();
+
+    // 初始语言为 zh-CN
+    assert.strictEqual(global.I18N.getLang(), "zh-CN", "初始语言应为 zh-CN");
+
+    // 步骤 1: 用户点击切换到 en-US (langReqSeq=1, 禁用控件, 发出 PUT A)
+    global.window.switchLang("en-US");
+    // 验证控件已禁用
+    assert.strictEqual(getElement("lang-zh").disabled, true, "请求期间 lang-zh 应禁用");
+    assert.strictEqual(getElement("lang-en").disabled, true, "请求期间 lang-en 应禁用");
+
+    // 步骤 2: 用户再次点击切换到 en-US (绕过禁用直接调用,模拟快速点击)
+    // I18N.getLang() 仍为 zh-CN,因此不会因相同语言返回,继续发出 PUT B
+    global.window.switchLang("en-US");
+    // langReqSeq 应为 2
+
+    // 步骤 3: 旧请求 A (seq=1) 先返回成功 - 应被丢弃,不应用语言
+    respondLanguagePutWithStatus(200, JSON.stringify({ language: "en-US" }));
+    // 旧响应被丢弃,语言应仍为 zh-CN
+    assert.strictEqual(global.I18N.getLang(), "zh-CN", "旧响应应被丢弃, 语言仍为 zh-CN");
+
+    // 步骤 4: 新请求 B (seq=2) 返回成功 - 应应用 en-US
+    respondLanguagePutWithStatus(200, JSON.stringify({ language: "en-US" }));
+    // 新响应被应用,语言应为 en-US
+    assert.strictEqual(global.I18N.getLang(), "en-US", "新响应应被应用, 语言为 en-US");
+    // 控件应恢复可用
+    assert.strictEqual(getElement("lang-zh").disabled, false, "请求完成后 lang-zh 应恢复可用");
+    assert.strictEqual(getElement("lang-en").disabled, false, "请求完成后 lang-en 应恢复可用");
+
+    teardownI18NMock();
+});
+
+test("语言切换失败后恢复请求与新切换请求防乱序", function () {
+    resetState();
+    setupI18NMock();
+
+    // 初始语言为 zh-CN
+    assert.strictEqual(global.I18N.getLang(), "zh-CN", "初始语言应为 zh-CN");
+
+    // 步骤 1: 用户点击切换到 en-US (langReqSeq=1, 禁用控件, 发出 PUT A)
+    global.window.switchLang("en-US");
+
+    // 步骤 2: PUT A 失败 - 触发 restoreServerLanguage(1), 发出 GET 请求
+    respondLanguagePutWithStatus(500, JSON.stringify({ error: "save failed", code: "language_save_failed" }));
+    // 失败后语言应仍为 zh-CN (restoreServerLanguage 尚未完成)
+    assert.strictEqual(global.I18N.getLang(), "zh-CN", "保存失败后语言应仍为 zh-CN");
+
+    // 步骤 3: 绕过禁用直接调用 switchLang("en-US") (langReqSeq=2, 发出 PUT B)
+    global.window.switchLang("en-US");
+
+    // 步骤 4: 旧的 restoreServerLanguage GET 请求 (seq=1) 返回 - 应被丢弃
+    // 因为 restoreSeq(1) !== langReqSeq(2), 不得恢复控件或改变语言
+    respondLanguageGet("zh-CN");
+    // 语言应仍为 zh-CN (旧 GET 被丢弃,新 PUT 尚未返回)
+    assert.strictEqual(global.I18N.getLang(), "zh-CN", "旧 GET 响应应被丢弃");
+    // 控件应仍为禁用 (旧 GET 不得恢复控件)
+    assert.strictEqual(getElement("lang-zh").disabled, true, "旧 GET 不得恢复控件, lang-zh 应仍禁用");
+
+    // 步骤 5: 新请求 B (seq=2) 返回成功 - 应应用 en-US 并恢复控件
+    respondLanguagePutWithStatus(200, JSON.stringify({ language: "en-US" }));
+    assert.strictEqual(global.I18N.getLang(), "en-US", "新响应应被应用, 语言为 en-US");
+    assert.strictEqual(getElement("lang-zh").disabled, false, "新请求完成后控件应恢复");
 
     teardownI18NMock();
 });

@@ -18,11 +18,13 @@ import (
 
 // P0安全: 新增错误码常量(与 server.go 中的 errCode* 同体系)
 const (
-	errCodeCSRFTokenInvalid = "csrf_token_invalid"     // 写接口缺少或令牌不匹配
-	errCodeHostRejected     = "host_rejected"          // Host 头与监听地址不一致
-	errCodeOriginRejected   = "origin_rejected"        // Origin/Referer 来源非法
-	errCodeUnsupportedMedia = "unsupported_media_type" // 写接口 Content-Type 非 application/json
-	errCodePayloadTooLarge  = "payload_too_large"      // 请求体超过 64KB
+	errCodeCSRFTokenInvalid   = "csrf_token_invalid"     // 写接口缺少或令牌不匹配
+	errCodeHostRejected       = "host_rejected"          // Host 头与监听地址不一致
+	errCodeOriginRejected     = "origin_rejected"        // Origin/Referer 来源非法
+	errCodeUnsupportedMedia   = "unsupported_media_type" // 写接口 Content-Type 非 application/json
+	errCodePayloadTooLarge    = "payload_too_large"      // 请求体超过 64KB
+	errCodeInvalidLanguage    = "invalid_language"       // 语言新增: 不支持的语言代码
+	errCodeLanguageSaveFailed = "language_save_failed"   // 语言新增: 语言保存到配置文件失败
 )
 
 // P0安全: 请求体最大字节数
@@ -30,6 +32,10 @@ const maxRequestBodyBytes = 64 * 1024
 
 // P0安全: 首页 CSRF 令牌 meta 占位符,handleIndex 替换为真实令牌
 const csrfMetaPlaceholder = `<meta name="dacat-csrf-token" content="">`
+
+// 语言新增: 首页语言 meta 占位符,handleIndex 替换为当前语言代码
+// 前端 loadSavedLang 优先读取此值,localStorage 仅作为旧版本兼容回退
+const languageMetaPlaceholder = `<meta name="dacat-language" content="">`
 
 // errPayloadTooLarge P0安全: 请求体超限哨兵错误,供 handler 识别并返回 413
 var errPayloadTooLarge = errors.New("payload too large")

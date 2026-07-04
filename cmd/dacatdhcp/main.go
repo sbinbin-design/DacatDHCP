@@ -1,9 +1,11 @@
 package main
 
 import (
+	"DacatDHCP/internal/i18n"
 	"DacatDHCP/internal/server"
 	"DacatDHCP/internal/singleinstance"
 	"DacatDHCP/internal/systray"
+	"DacatDHCP/internal/version"
 	"DacatDHCP/web"
 	"encoding/json"
 	"os"
@@ -35,6 +37,10 @@ var (
 
 	shell32Dll        = syscall.NewLazyDLL("shell32.dll")
 	procShellExecuteW = shell32Dll.NewProc("ShellExecuteW")
+
+	// 语言新增: kernel32 加载 GetUserDefaultUILanguage,用于首次运行检测 Windows 界面语言
+	kernel32Dll                  = syscall.NewLazyDLL("kernel32.dll")
+	procGetUserDefaultUILanguage = kernel32Dll.NewProc("GetUserDefaultUILanguage")
 )
 
 const (
@@ -87,6 +93,50 @@ func getDataDir() string {
 		return "data"
 	}
 	return filepath.Join(filepath.Dir(exe), "data")
+}
+
+// detectWindowsUILanguage 通过 GetUserDefaultUILanguage 检测 Windows 界面语言
+// 语言新增: 首次运行无有效配置时调用,中文系统返回 zh-CN,英文系统返回 en-US
+// 无法识别时回退 zh-CN;API 不可用时也回退 zh-CN
+func detectWindowsUILanguage() string {
+	if err := procGetUserDefaultUILanguage.Find(); err != nil {
+		return i18n.LangZhCN
+	}
+	ret, _, _ := procGetUserDefaultUILanguage.Call()
+	langID := uint32(ret)
+	// LANGID 低 10 位为 Primary Language ID
+	// 0x04 = 中文, 0x09 = 英文
+	primaryLang := langID & 0x3FF
+	switch primaryLang {
+	case 0x04:
+		return i18n.LangZhCN
+	case 0x09:
+		return i18n.LangEnUS
+	default:
+		return i18n.LangZhCN
+	}
+}
+
+// loadStartupLanguage 在显示任何 MessageBox 之前加载已保存的语言配置
+// 收口: 使用 ParseLanguage 严格解析,仅 zh-CN/en-US 通过;空值或无效值才检测 Windows 界面语言
+// 英文 Windows 环境选 en-US,其余回退 zh-CN
+// 加载完成后通过 i18n.SetLanguage 设置全局语言,供后续 MessageBox 使用
+func loadStartupLanguage(dataDir string) {
+	configPath := filepath.Join(dataDir, "config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		var cfg struct {
+			Language string `json:"language"`
+		}
+		if json.Unmarshal(data, &cfg) == nil {
+			// 严格解析: 仅 zh-CN/en-US 通过,拒绝 zh/en/中文 等别名
+			if parsed, ok := i18n.ParseLanguage(cfg.Language); ok {
+				i18n.SetLanguage(parsed)
+				return
+			}
+		}
+	}
+	// 配置缺失或无效,检测 Windows 界面语言
+	i18n.SetLanguage(detectWindowsUILanguage())
 }
 
 func openBrowser(url string) {
@@ -143,20 +193,20 @@ func (t *trayCallbacks) OnOpenConsole() {
 	openBrowser(consoleURL())
 }
 
-func (t *trayCallbacks) GetStatusText() string {
-	if app != nil && app.IsDHCPRunning() {
-		return "DHCP: 运行中"
-	}
-	return "DHCP: 已停止"
+// IsDHCPRunning 语言重构: 替代原 GetStatusText,由托盘自行生成本地化文本
+// 禁止通过比较中文字符串判断状态
+func (t *trayCallbacks) IsDHCPRunning() bool {
+	return app != nil && app.IsDHCPRunning()
 }
 
 // OnExit 用户请求退出（含确认）
+// 语言重构: 退出确认文案接入 i18n,标题使用 version.ProductName(),正文使用 msgbox.exit_confirm
 func (t *trayCallbacks) OnExit() {
 	if !atomic.CompareAndSwapInt32(&isClosing, 0, 1) {
 		return
 	}
 	if app != nil && app.IsDHCPRunning() {
-		if !showConfirmBox("DacatDHCP", "DHCP 服务正在运行中，退出将停止 DHCP 服务。\n\n确定要退出吗？") {
+		if !showConfirmBox(version.ProductName(), i18n.T("msgbox.exit_confirm")) {
 			atomic.StoreInt32(&isClosing, 0)
 			return
 		}
@@ -183,11 +233,14 @@ func (t *trayCallbacks) OnForceExit() {
 //	→tray.Run返回→FinalizeAfterRun→释放单实例锁→CloseLogger
 //
 // 保证退出阶段的错误在 CloseLogger 前写入日志
+// 语言重构: 强制退出 MessageBox 文案接入 i18n
 func doCleanup() {
 	exitOnce.Do(func() {
 		if app != nil {
 			// V8: 先清除状态变化回调
 			app.ClearOnStatusChange()
+			// 语言新增: 同步清除语言变化回调
+			app.ClearOnLanguageChange()
 			// 禁止新的 Web API 操作
 			app.SetClosing()
 			// V8: 停止 DHCP→关闭 HTTP（不关闭日志）
@@ -202,7 +255,8 @@ func doCleanup() {
 					app.Logf("RequestExit 失败: %v", err)
 				}
 				// V8: 进程级兜底——DHCP 和 HTTP 已安全关闭后强制退出
-				showErrorBox("DacatDHCP", "托盘消息循环无法退出，程序将强制结束。")
+				// 语言重构: 强制退出提示文案接入 i18n,标题用产品名,正文含 %s 由 FormatErrorf 传入产品名
+				showErrorBox(version.ProductName(), i18n.Tf("msgbox.tray_exit_forced", version.ProductName()))
 				os.Exit(1)
 			}
 		}
@@ -217,25 +271,29 @@ func doCleanup() {
 // ============================================================
 
 func main() {
-	// 1. 检查管理员权限
+	// 语言新增: 1. 先获取数据目录并加载已保存语言,在任何 MessageBox 之前完成
+	// 首次运行无有效配置时由 detectWindowsUILanguage 检测 Windows 界面语言
+	dataDir := getDataDir()
+	loadStartupLanguage(dataDir)
+
+	// 2. 检查管理员权限
 	if !isAdmin() {
 		if err := runAsAdmin(); err != nil {
-			showErrorBox("DacatDHCP 启动失败",
-				"需要管理员权限运行 DHCP 服务。\n\nUAC 提权失败，请右键点击程序选择\"以管理员身份运行\"。")
+			// 语言重构: 管理员权限不足提示接入 i18n,标题用产品名,正文含 %s 由 FormatErrorf 传入产品名
+			showErrorBox(version.ProductName(), i18n.FormatErrorf("msgbox.admin_required", err.Error(), version.ProductName()))
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
-	dataDir := getDataDir()
-
-	// 2. 单实例检测
+	// 3. 单实例检测
 	var isFirst bool
 	var acquireErr error
 	inst, isFirst, acquireErr = singleinstance.Acquire()
 	if !isFirst {
 		if acquireErr != nil {
-			showErrorBox("DacatDHCP 启动失败", "单实例检测失败: "+acquireErr.Error())
+			// 语言重构: 单实例检测失败提示接入 i18n,标题用产品名,正文不含 %s,详细信息附在本地化主提示之后
+			showErrorBox(version.ProductName(), i18n.FormatError("msgbox.single_instance_failed", acquireErr.Error()))
 			os.Exit(1)
 		}
 		webPort := readWebPortFromConfig(dataDir)
@@ -243,59 +301,70 @@ func main() {
 		os.Exit(0)
 	}
 
-	// 3. 创建应用服务器
+	// 4. 创建应用服务器
 	var err error
 	app, err = server.NewAppServer(dataDir, web.Assets)
 	if err != nil {
-		showErrorBox("DacatDHCP 启动失败", "初始化失败: "+err.Error())
+		// 语言重构: 初始化失败提示接入 i18n,标题用产品名,正文含 %s 由 FormatErrorf 传入产品名
+		showErrorBox(version.ProductName(), i18n.FormatErrorf("msgbox.init_failed", err.Error(), version.ProductName()))
 		inst.Release()
 		os.Exit(1)
 	}
 	app.PostInit()
 	app.SetIsAdmin(isAdmin()) // V10新增: 注入真实管理员权限状态,前端底部栏禁止伪造
 
-	// 4. 启动 HTTP 服务器
+	// 5. 启动 HTTP 服务器
 	if err := app.Start(); err != nil {
-		showErrorBox("DacatDHCP 启动失败", "管理服务启动失败: "+err.Error())
+		// 语言重构: 管理服务启动失败提示接入 i18n,标题用产品名,正文含 %s 由 FormatErrorf 传入产品名
+		showErrorBox(version.ProductName(), i18n.FormatErrorf("msgbox.http_start_failed", err.Error(), version.ProductName()))
 		app.Close()
 		inst.Release()
 		os.Exit(1)
 	}
 
-	// 5. LockOSThread（V8: 只允许一次 Lock，对应的 Unlock 在 FinalizeAfterRun 之后）
+	// 6. LockOSThread（V8: 只允许一次 Lock，对应的 Unlock 在 FinalizeAfterRun 之后）
 	runtime.LockOSThread()
 
-	// 6. 创建隐藏窗口 + 消息过滤
+	// 7. 创建隐藏窗口 + 消息过滤
 	tray, err = systray.NewTray(&trayCallbacks{}, app.Logf)
 	if err != nil {
 		app.Logf("系统托盘创建失败: %v", err)
-		showErrorBox("DacatDHCP 启动失败", "系统托盘创建失败: "+err.Error())
+		// 语言重构: 托盘创建失败提示接入 i18n,标题用产品名,正文含 %s 由 FormatErrorf 传入产品名
+		showErrorBox(version.ProductName(), i18n.FormatErrorf("msgbox.tray_create_failed", err.Error(), version.ProductName()))
 		app.Close()
 		inst.Release()
 		os.Exit(1)
 	}
 
-	// 7. 添加托盘图标（失败时不得打开浏览器或留下后台进程）
+	// 8. 添加托盘图标（失败时不得打开浏览器或留下后台进程）
 	if err := tray.AddIcon(); err != nil {
 		app.Logf("托盘图标添加失败: %v", err)
-		showErrorBox("DacatDHCP 启动失败", "托盘图标添加失败: "+err.Error())
+		// 语言重构: 托盘图标添加失败提示接入 i18n,标题用产品名,正文含 %s 由 FormatErrorf 传入产品名
+		showErrorBox(version.ProductName(), i18n.FormatErrorf("msgbox.tray_icon_failed", err.Error(), version.ProductName()))
 		app.Close()
 		tray.Destroy()
 		inst.Release()
 		os.Exit(1)
 	}
 
-	// 8. 设置 DHCP 状态变化回调
+	// 9. 设置 DHCP 状态变化回调
 	app.SetOnStatusChange(func() {
 		if tray != nil {
 			tray.UpdateStatus()
 		}
 	})
 
-	// 9. 打开浏览器
+	// 语言新增: 10. 设置语言变化回调,语言保存成功后通知托盘刷新 Tooltip 和右键菜单
+	app.SetOnLanguageChange(func() {
+		if tray != nil {
+			tray.UpdateStatus()
+		}
+	})
+
+	// 11. 打开浏览器
 	openBrowser(consoleURL())
 
-	// 10. 进入消息循环（阻塞，直到 WM_APP_EXIT 触发 PostQuitMessage）
+	// 12. 进入消息循环（阻塞，直到 WM_APP_EXIT 触发 PostQuitMessage）
 	tray.Run()
 
 	// V8: FinalizeAfterRun 兜底清理（幂等，即使 WM_APP_EXIT 已清理也不影响）

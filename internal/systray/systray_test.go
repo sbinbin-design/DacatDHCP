@@ -72,13 +72,14 @@ type mockCallbacks struct {
 	openConsoleCount int32
 	exitCount        int32
 	forceExitCount   int32
-	statusText       string
+	// 语言重构: 替代原 statusText string,由调用方提供布尔状态
+	dhcpRunning bool
 }
 
-func (m *mockCallbacks) OnOpenConsole()        { atomic.AddInt32(&m.openConsoleCount, 1) }
-func (m *mockCallbacks) OnExit()               { atomic.AddInt32(&m.exitCount, 1) }
-func (m *mockCallbacks) OnForceExit()          { atomic.AddInt32(&m.forceExitCount, 1) }
-func (m *mockCallbacks) GetStatusText() string { return m.statusText }
+func (m *mockCallbacks) OnOpenConsole()      { atomic.AddInt32(&m.openConsoleCount, 1) }
+func (m *mockCallbacks) OnExit()             { atomic.AddInt32(&m.exitCount, 1) }
+func (m *mockCallbacks) OnForceExit()        { atomic.AddInt32(&m.forceExitCount, 1) }
+func (m *mockCallbacks) IsDHCPRunning() bool { return m.dhcpRunning }
 
 // TestHandleEndSession_WParamZero 会话取消不触发退出
 func TestHandleEndSession_WParamZero(t *testing.T) {
@@ -119,7 +120,7 @@ func TestHandleEndSession_NilCallbacks(t *testing.T) {
 // ---- mock Tray 辅助 ----
 
 func newMockTray() *Tray {
-	cb := &mockCallbacks{statusText: "DHCP: 已停止"}
+	cb := &mockCallbacks{dhcpRunning: false}
 	return &Tray{
 		callbacks: cb,
 		win32: &Win32API{

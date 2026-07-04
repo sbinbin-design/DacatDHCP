@@ -17,11 +17,13 @@ import (
 
 // testSecurityWebFS 返回包含 CSRF 占位符的测试用 webFS
 // 避免导入 web 包,使用 fstest.MapFS 提供最小静态文件集
+// 语言新增: 同步包含语言 meta 占位符,与 index.html 实际结构一致
 func testSecurityWebFS() fstest.MapFS {
 	return fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head>
 <meta name="dacat-csrf-token" content="">
+<meta name="dacat-language" content="">
 <title>DacatDHCP</title>
 </head><body><button id="btn-start">start</button></body></html>`),
 		},
@@ -491,6 +493,7 @@ func TestSecurity_AllGetInterfacesWork(t *testing.T) {
 		"/api/leases",
 		"/api/logs",
 		"/api/version",
+		"/api/language", // 语言新增: GET 接口需通过安全中间件
 	}
 	for _, api := range getApis {
 		req := newLocalRequest(http.MethodGet, api, nil)

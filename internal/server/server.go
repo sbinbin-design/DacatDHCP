@@ -2,6 +2,7 @@ package server
 
 import (
 	"DacatDHCP/internal/dhcp"
+	"DacatDHCP/internal/i18n"
 	"DacatDHCP/internal/network"
 	"DacatDHCP/internal/version"
 	"encoding/binary"
@@ -26,6 +27,7 @@ type Config struct {
 	WebPort      int      `json:"web_port"`
 	Gateway      string   `json:"gateway"`     // V2新增: 默认网关（可选，空则不下发 Option 3）
 	DNSServers   []string `json:"dns_servers"` // V2新增: DNS 服务器（可选，空则不下发 Option 6）
+	Language     string   `json:"language"`    // 语言: zh-CN/en-US;空或无效时由 main.go 检测 Windows 界面语言,NewAppServer 沿用全局语言
 }
 
 // DefaultConfig 返回默认配置
@@ -48,8 +50,11 @@ type AppServer struct {
 	httpSrv        *http.Server
 	closing        bool   // V2: 退出过程中拒绝新的 Web API 操作
 	onStatusChange func() // V3: DHCP 状态变化时回调（用于更新托盘 Tooltip）
-	isAdmin        bool   // V10新增: 进程是否以管理员权限运行(由 main 注入),前端底部栏展示真实权限状态
-	csrfToken      string // P0安全: 每次启动生成的 CSRF 令牌,注入首页 meta,写接口校验 X-Dacat-CSRF-Token
+	// 语言新增: 语言变化时回调(用于刷新托盘 Tooltip)
+	// 通过 SetOnLanguageChange 注入,handleLanguage 在锁外直接触发
+	onLanguageChange func()
+	isAdmin          bool   // V10新增: 进程是否以管理员权限运行(由 main 注入),前端底部栏展示真实权限状态
+	csrfToken        string // P0安全: 每次启动生成的 CSRF 令牌,注入首页 meta,写接口校验 X-Dacat-CSRF-Token
 	// V16新增测试钩子: 非 nil 时覆盖默认的临时文件写入逻辑(Write/Sync/Close)
 	// 仅测试使用,生产代码不得设置
 	testSaveConfigWriter saveConfigWriter
@@ -90,6 +95,17 @@ func NewAppServer(dataDir string, webFS fs.FS) (*AppServer, error) {
 	configPath := filepath.Join(dataDir, "config.json")
 	if data, err := os.ReadFile(configPath); err == nil {
 		json.Unmarshal(data, &config)
+	}
+	// 语言重构: 不再用空配置覆盖 main.go 已确定的语言
+	// 配置中 Language 有效时采用配置值,无效或缺失时沿用当前全局语言(由 main.go 通过配置或 Windows 检测设置)
+	// 后续 saveConfig 时会写入标准值,实现旧配置迁移
+	// 必须在任何 MessageBox 之前完成(由 main 在 NewAppServer 之前预先调用 i18n.SetLanguage)
+	if parsed, ok := i18n.ParseLanguage(config.Language); ok {
+		i18n.SetLanguage(parsed)
+		config.Language = parsed
+	} else {
+		// 配置无效或缺失: 沿用 main.go 已设置的全局语言,确保 config.Language 写入标准值
+		config.Language = i18n.GetLanguage()
 	}
 
 	// 创建 DHCP 服务器
@@ -149,6 +165,7 @@ func (a *AppServer) buildMux() *http.ServeMux {
 	mux.HandleFunc("/api/logs/clear", a.handleLogsClear)         // V12新增: 清空内存环形缓冲区并截断日志文件
 	mux.HandleFunc("/api/pool-recommend", a.handlePoolRecommend) // V1修复: 后端计算地址池推荐
 	mux.HandleFunc("/api/version", a.handleVersion)              // 版本信息：读取 internal/version 唯一源
+	mux.HandleFunc("/api/language", a.handleLanguage)            // 语言新增: GET 返回当前语言,PUT 切换语言
 
 	return mux
 }
@@ -212,6 +229,8 @@ func (a *AppServer) CloseServices() {
 
 	// V5: 先清除状态变化回调
 	a.onStatusChange = nil
+	// 语言新增: 同步清除语言变化回调,避免托盘销毁后旧回调继续触发
+	a.onLanguageChange = nil
 
 	// V1修复: 先停止 DHCP 服务（如果运行中），Stop() 内部会等待全部协程退出
 	// V9修复: 程序退出路径使用 StopForShutdown，清空 status.error 不残留错误提示
@@ -256,6 +275,23 @@ func (a *AppServer) SetOnStatusChange(f func()) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.onStatusChange = f
+}
+
+// SetOnLanguageChange 设置语言变化回调
+// 语言新增: 语言保存成功后在锁外直接触发 onLanguageChange,通知托盘刷新 Tooltip
+// 必须在 Start 之前设置,关闭时由 CloseServices 清除
+func (a *AppServer) SetOnLanguageChange(f func()) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onLanguageChange = f
+}
+
+// ClearOnLanguageChange 清除语言变化回调
+// 语言新增: 退出时清除,避免托盘销毁后旧回调继续触发
+func (a *AppServer) ClearOnLanguageChange() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onLanguageChange = nil
 }
 
 // SetIsAdmin V10新增: 注入进程管理员权限状态(由 main 在创建 AppServer 后调用)
@@ -303,6 +339,7 @@ func (a *AppServer) Logf(format string, args ...interface{}) {
 // handleIndex 处理首页
 // P0安全: 注入 CSRF 令牌到 <meta name="dacat-csrf-token">,设置 Cache-Control: no-store
 // 令牌不写入配置、日志或接口,仅通过首页 meta 暴露给同源前端
+// 语言新增: 同时注入当前语言到 <meta name="dacat-language">,前端首次加载以服务端语言为准
 func (a *AppServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -316,6 +353,10 @@ func (a *AppServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// P0安全: 将占位符替换为真实 CSRF 令牌(仅替换一次,避免影响其他 meta)
 	html := strings.Replace(string(data), csrfMetaPlaceholder,
 		fmt.Sprintf(`<meta name="dacat-csrf-token" content="%s">`, a.csrfToken), 1)
+	// 语言新增: 将语言占位符替换为当前语言代码,前端 loadSavedLang 优先读取此值
+	// 放在 CSRF 替换之后,不影响 CSRF meta
+	html = strings.Replace(html, languageMetaPlaceholder,
+		fmt.Sprintf(`<meta name="dacat-language" content="%s">`, i18n.GetLanguage()), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// P0安全: 首页禁止缓存,避免令牌被缓存复用
 	w.Header().Set("Cache-Control", "no-store")
@@ -426,6 +467,10 @@ func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cfg.DNSServers = ipSliceToStrings(dnsIPs)
+
+		// 语言新增: PUT /api/config 不修改 Language 字段,Language 由 /api/language 独立管理
+		// 在 a.config = cfg 之前保留当前 Language,避免被请求体覆盖为空
+		cfg.Language = a.config.Language
 
 		// V14: 先保存配置到文件,成功后再更新内存配置,禁止写入失败仍更新内存或返回 ok
 		// 临时设置 a.config 供 saveConfig 序列化,失败则恢复原值
@@ -780,6 +825,91 @@ func boolStr(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+// handleLanguage 处理语言 API
+// 语言新增: GET 返回当前语言;PUT 仅接受 {"language":"zh-CN"} 或 {"language":"en-US"}
+// 复用现有 CSRF/Host/Origin/Content-Type/64KB 限制和严格 JSON 解码(由中间件统一处理)
+// 允许在 DHCP 运行期间切换语言,保存失败必须回滚内存语言并返回 language_save_failed
+func (a *AppServer) handleLanguage(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		// 返回当前语言,前端首次加载以服务端语言为准
+		a.mu.RLock()
+		lang := a.config.Language
+		a.mu.RUnlock()
+		if lang == "" {
+			lang = i18n.GetLanguage()
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"language": lang})
+
+	case http.MethodPut:
+		a.mu.Lock()
+
+		// 退出过程中拒绝修改语言
+		if a.closing {
+			a.mu.Unlock()
+			writeError(w, http.StatusServiceUnavailable, errCodeServiceClosing, "服务正在关闭")
+			return
+		}
+
+		var req struct {
+			Language string `json:"language"`
+		}
+		// P0安全: 使用 decodeJSONBody 严格解码,拒绝未知字段、多个对象、尾随垃圾和超限请求体
+		if err := decodeJSONBody(r, &req); err != nil {
+			a.mu.Unlock()
+			if err == errPayloadTooLarge {
+				writeError(w, http.StatusRequestEntityTooLarge, errCodePayloadTooLarge, "请求体过大")
+				return
+			}
+			writeError(w, http.StatusBadRequest, errCodeInvalidRequest, "请求格式错误")
+			return
+		}
+
+		// 语言重构: 严格只接受 zh-CN/en-US,拒绝 zh/en/english/中文 等别名
+		// 复用 i18n.ParseLanguage 严格解析,空值或无效值返回 invalid_language
+		rawLang := strings.TrimSpace(req.Language)
+		parsed, ok := i18n.ParseLanguage(rawLang)
+		if !ok {
+			a.mu.Unlock()
+			writeError(w, http.StatusBadRequest, errCodeInvalidLanguage, "不支持的语言")
+			return
+		}
+
+		// 内存语言先备份,保存失败时回滚
+		oldLang := a.config.Language
+		// 先调用 i18n.SetLanguage 更新全局状态,失败时回滚
+		// 注意:i18n.SetLanguage 是全局状态,回滚时必须恢复原值
+		previousGlobalLang := i18n.GetLanguage()
+		if !i18n.SetLanguage(parsed) {
+			// 不应发生(ParseLanguage 已校验),防御性编程
+			a.mu.Unlock()
+			writeError(w, http.StatusBadRequest, errCodeInvalidLanguage, "不支持的语言")
+			return
+		}
+		a.config.Language = parsed
+		if err := a.saveConfig(); err != nil {
+			// 保存失败:回滚内存语言和全局 i18n 状态,返回 language_save_failed
+			a.config.Language = oldLang
+			i18n.SetLanguage(previousGlobalLang)
+			a.logger.Log("保存语言配置失败: %v", err)
+			a.mu.Unlock()
+			writeError(w, http.StatusInternalServerError, errCodeLanguageSaveFailed, err.Error())
+			return
+		}
+		// 保存成功,捕获回调后释放锁,在锁外触发回调避免递归加锁
+		// 回调内可能调用 UpdateStatus 等需要锁的方法,必须在锁外执行
+		callback := a.onLanguageChange
+		a.mu.Unlock()
+		if callback != nil {
+			callback()
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"language": parsed})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, errCodeMethodNotAllowed, "方法不允许")
+	}
 }
 
 // RecommendPool 根据服务端 IP 和子网掩码计算推荐地址池

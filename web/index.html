@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- P0安全: CSRF 令牌占位符,由后端 handleIndex 替换为真实令牌,前端 AJAX 读取后写入 X-Dacat-CSRF-Token -->
     <meta name="dacat-csrf-token" content="">
+    <!-- 语言新增: 服务端注入的当前语言,前端 loadSavedLang 优先读取此值,localStorage 仅作旧版本兼容回退 -->
+    <meta name="dacat-language" content="">
     <title>DacatDHCP</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css">

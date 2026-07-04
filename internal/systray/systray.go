@@ -12,6 +12,7 @@
 package systray
 
 import (
+	"DacatDHCP/internal/i18n"
 	"DacatDHCP/internal/version"
 	"errors"
 	"fmt"
@@ -295,7 +296,9 @@ type Callbacks interface {
 	OnOpenConsole()
 	OnExit()
 	OnForceExit()
-	GetStatusText() string
+	// 语言重构: 由调用方提供布尔状态,托盘自行生成本地化文本
+	// 替代原 GetStatusText() string,禁止通过比较中文字符串判断状态
+	IsDHCPRunning() bool
 }
 
 // ============================================================
@@ -605,15 +608,17 @@ func (t *Tray) updateTrayTooltip() {
 		return
 	}
 
-	statusText := "DHCP已停止"
+	// 语言重构: 使用 i18n.T 获取本地化文案,禁止硬编码中文
+	// 右键菜单每次打开时也会读取当前语言,无需重启程序即可同步切换
+	var statusKey string
 	if t.closing.Load() {
-		statusText = "正在退出"
-	} else if t.callbacks != nil {
-		cbText := t.callbacks.GetStatusText()
-		if cbText == "DHCP: 运行中" {
-			statusText = "DHCP运行中"
-		}
+		statusKey = "tray.tooltip_exiting"
+	} else if t.callbacks != nil && t.callbacks.IsDHCPRunning() {
+		statusKey = "tray.tooltip_running"
+	} else {
+		statusKey = "tray.tooltip_stopped"
 	}
+	statusText := i18n.T(statusKey)
 	// 版本号读取 internal/version 唯一源，禁止硬编码
 	tooltip := trayTitle() + " - " + statusText
 
@@ -632,17 +637,25 @@ func (t *Tray) showContextMenu() {
 	}
 	defer procDestroyMenu.Call(menu)
 
-	statusText := "DHCP: 已停止"
-	if t.callbacks != nil {
-		statusText = t.callbacks.GetStatusText()
+	// 语言重构: 右键菜单每次打开时读取当前 i18n 语言,无需重启即可同步切换
+	// 状态菜单项根据 DHCP 运行状态选择文案,灰色只读
+	var statusKey string
+	if t.closing.Load() {
+		statusKey = "tray.exiting"
+	} else if t.callbacks != nil && t.callbacks.IsDHCPRunning() {
+		statusKey = "tray.dhcp_running"
+	} else {
+		statusKey = "tray.dhcp_stopped"
 	}
+	statusText := i18n.T(statusKey)
 	statusTextPtr, _ := syscall.UTF16PtrFromString(statusText)
 	procAppendMenuW.Call(menu, MF_STRING|MF_GRAYED, menuStatus, uintptr(unsafe.Pointer(statusTextPtr)))
 	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
-	openTextPtr, _ := syscall.UTF16PtrFromString("打开控制台")
+	openTextPtr, _ := syscall.UTF16PtrFromString(i18n.T("tray.open_console"))
 	procAppendMenuW.Call(menu, MF_STRING, menuOpenConsole, uintptr(unsafe.Pointer(openTextPtr)))
 	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
-	exitTextPtr, _ := syscall.UTF16PtrFromString("退出DacatDHCP")
+	// 语言重构: tray.exit 含 %s 占位符,使用 Tf 传入 version.ProductName(),避免硬编码产品名
+	exitTextPtr, _ := syscall.UTF16PtrFromString(i18n.Tf("tray.exit", version.ProductName()))
 	procAppendMenuW.Call(menu, MF_STRING, menuExit, uintptr(unsafe.Pointer(exitTextPtr)))
 
 	hwnd := syscall.Handle(t.hwnd.Load())

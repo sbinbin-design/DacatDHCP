@@ -351,14 +351,37 @@
         // P0安全新增: 写接口 Content-Type 非 application/json
         "unsupported_media_type": {zh: "不支持的媒体类型",                               en: "Unsupported media type"},
         // P0安全新增: 请求体超过 64KB
-        "payload_too_large":   {zh: "请求体过大",                                        en: "Request body too large"}
+        "payload_too_large":   {zh: "请求体过大",                                        en: "Request body too large"},
+        // 语言新增: 不支持的语言代码,PUT /api/language 校验失败时返回
+        "invalid_language":    {zh: "不支持的语言",                                      en: "Unsupported language"},
+        // 语言新增: 语言保存到配置文件失败,内存语言已回滚
+        "language_save_failed": {zh: "语言保存失败",                                     en: "Failed to save language"}
     };
 
     // 当前语言,默认 zh-CN
     var currentLang = "zh-CN";
 
-    // 从 localStorage 读取已保存语言,首次启动默认中文
+    // 从服务端注入的 meta 或 localStorage 读取已保存语言,首次启动默认中文
+    // 语言新增: 优先读取后端注入的 <meta name="dacat-language">,服务端语言为唯一权威来源
+    // localStorage 仅作为旧版本兼容回退(后端 meta 不存在时使用),不再作为托盘语言的独立来源
     function loadSavedLang() {
+        // 1. 优先读取服务端注入的语言 meta
+        try {
+            var metas = document.getElementsByTagName("meta");
+            if (metas) {
+                for (var i = 0; i < metas.length; i++) {
+                    if (metas[i].getAttribute("name") === "dacat-language") {
+                        var srvLang = metas[i].getAttribute("content") || "";
+                        if (srvLang === "zh-CN" || srvLang === "en-US") {
+                            return srvLang;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // meta 读取失败时回退到 localStorage
+        }
+        // 2. 旧版本兼容回退: 读取 localStorage 中保存的语言
         try {
             var saved = window.localStorage.getItem("dacatdhcp_lang");
             if (saved === "zh-CN" || saved === "en-US") {
@@ -367,7 +390,7 @@
         } catch (e) {
             // localStorage 不可用时忽略
         }
-        // 根据系统语言自动选择英文(非中文系统默认英文)
+        // 3. 最终回退: 根据系统语言自动选择(中文系统 zh-CN,其他 en-US)
         try {
             var navLang = (navigator.language || navigator.userLanguage || "zh-CN").toLowerCase();
             if (navLang.indexOf("zh") === 0) {

@@ -17,6 +17,7 @@
     var adapterReqSeq = 0;     // V14新增: 网卡请求序号,旧回调不得在语言切换或用户编辑后执行 autoFillPool
     var poolReqSeq = 0;        // V15新增: 地址池推荐请求序号,旧回调不得覆盖新网卡或用户已编辑的起止 IP
     var poolUserEditing = false; // V15新增: 用户开始手动编辑地址池时置 true,使在途推荐请求失效
+    var langReqSeq = 0;        // 语言新增: 语言切换请求序号,过期响应不得覆盖用户最后一次选择
 
     // ---- 工具函数 ----
 
@@ -975,12 +976,97 @@
     // ---- 国际化与主题相关全局函数 ----
 
     // V10重构: 语言切换改为"中文｜EN"双项切换,替代旧的 toggleLang
+    // 语言新增: 先调用 PUT /api/language 保存到后端,成功后再刷新页面文案
+    // 失败则恢复服务端当前语言并显示中英文错误提示,禁止在前端独立于后端切换语言
+    // 语言新增: 请求期间禁用顶部语言按钮和设置页语言单选项,防止重复点击和请求乱序
+    // 语言新增: 递增请求序号,过期响应不得覆盖用户最后一次选择;请求结束后只由最后一次有效请求恢复控件状态
     window.switchLang = function (lang) {
         if (!window.I18N) return;
         if (lang !== "zh-CN" && lang !== "en-US") return;
         if (I18N.getLang() === lang) return;
-        applyLanguageChange(lang);
+        // 递增请求序号,禁用控件,防止重复点击和请求乱序
+        langReqSeq++;
+        var mySeq = langReqSeq;
+        setLangControlsEnabled(false);
+        putLanguage(lang, function (err) {
+            // 旧请求返回时不得覆盖用户最后一次选择
+            if (mySeq !== langReqSeq) return;
+            if (err) {
+                // 失败:显示本地化错误,恢复服务端当前语言、按钮和单选状态
+                showLanguageSaveError(err);
+                restoreServerLanguage(mySeq);
+                return;
+            }
+            // 成功:刷新页面语言、顶部按钮 active、设置页单选框 checked 及托盘回调
+            applyLanguageChange(lang);
+            if (window.I18N) {
+                checkRadio("settings-lang", lang);
+            }
+            setLangControlsEnabled(true);
+        });
     };
+
+    // 语言新增: 调用 PUT /api/language 保存语言到后端
+    // 复用 ajax 函数,自动携带 CSRF 令牌和 Content-Type
+    // callback(err): err 为 null 表示成功,否则为 {message, code} 对象
+    function putLanguage(lang, callback) {
+        ajax("PUT", "/api/language", {language: lang}, function (err, resp) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            callback(null);
+        });
+    }
+
+    // 语言新增: 显示语言保存失败的错误提示(中英文)
+    // 使用 teByCode 按错误码翻译,兼容 CSRF 令牌失效等安全错误
+    function showLanguageSaveError(err) {
+        var msg = (err && err.message) ? err.message : "Failed to save language";
+        var code = (err && err.code) ? err.code : "";
+        var text = window.I18N ? I18N.teByCode(code, msg) : msg;
+        // 使用原生 alert 兼容 IE11,不引入额外 UI 组件
+        try {
+            window.alert(text);
+        } catch (e) {
+            // alert 不可用时忽略
+        }
+    }
+
+    // 语言新增: 禁用/启用顶部语言按钮和设置页语言单选项
+    // 请求期间禁用控件,防止重复点击和请求乱序
+    function setLangControlsEnabled(enabled) {
+        var ids = ["lang-zh", "lang-en", "settings-lang-zh", "settings-lang-en"];
+        for (var i = 0; i < ids.length; i++) {
+            var el = document.getElementById(ids[i]);
+            if (el) el.disabled = !enabled;
+        }
+    }
+
+    // 语言新增: 失败时从服务端恢复当前语言状态
+    // GET /api/language 获取服务端真实语言,返回值必须校验为 zh-CN 或 en-US 后才能应用
+    // GET 失败或返回值无效时,以 I18N.getLang() 作为实际语言重新同步控件,禁止页面与单选框不一致
+    // restoreSeq 为发起恢复时的序号,回调返回时若序号不匹配说明有新请求,跳过并交由最新请求处理
+    function restoreServerLanguage(restoreSeq) {
+        get("/api/language", function (err, data) {
+            // 旧恢复请求返回时不再处理,由最新请求负责控件状态
+            if (restoreSeq !== langReqSeq) return;
+            var lang = null;
+            if (!err && data && (data.language === "zh-CN" || data.language === "en-US")) {
+                // GET 成功且返回值有效,使用服务端语言
+                lang = data.language;
+            } else {
+                // GET 失败或返回值无效,以 I18N.getLang() 作为实际语言同步控件
+                lang = window.I18N ? I18N.getLang() : "zh-CN";
+            }
+            // 同步页面文案、顶部按钮 active 状态、设置页单选框 checked 状态
+            applyLanguageChange(lang);
+            if (window.I18N) {
+                checkRadio("settings-lang", lang);
+            }
+            setLangControlsEnabled(true);
+        });
+    }
 
     // 应用语言变更: 保存、刷新文案、更新分段控件、更新 <html lang>、更新主题按钮 aria-label
     function applyLanguageChange(newLang) {
@@ -1063,9 +1149,32 @@
     };
 
     // 设置弹窗内语言单选变化: 立即切换语言
+    // 语言新增: 先调用 PUT /api/language 保存,成功后再刷新页面,失败恢复服务端语言
+    // 语言新增: 复用 switchLang 的请求序号和控件禁用机制,防止重复点击和请求乱序
     window.onSettingsLangChange = function (lang) {
         if (!window.I18N) return;
-        applyLanguageChange(lang);
+        if (lang !== "zh-CN" && lang !== "en-US") return;
+        if (I18N.getLang() === lang) return;
+        // 递增请求序号,禁用控件,防止重复点击和请求乱序
+        langReqSeq++;
+        var mySeq = langReqSeq;
+        setLangControlsEnabled(false);
+        putLanguage(lang, function (err) {
+            // 旧请求返回时不得覆盖用户最后一次选择
+            if (mySeq !== langReqSeq) return;
+            if (err) {
+                // 失败:显示本地化错误,恢复服务端当前语言、按钮和单选状态
+                showLanguageSaveError(err);
+                restoreServerLanguage(mySeq);
+                return;
+            }
+            // 成功:刷新页面语言、顶部按钮 active、设置页单选框 checked 及托盘回调
+            applyLanguageChange(lang);
+            if (window.I18N) {
+                checkRadio("settings-lang", lang);
+            }
+            setLangControlsEnabled(true);
+        });
     };
 
     // 关于弹窗: 打开时确保版本信息已填充
