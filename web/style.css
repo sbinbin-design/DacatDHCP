@@ -1025,7 +1025,7 @@ button:disabled {
     flex: 1 1 260px;
     min-width: 0;
     max-width: 100%;
-    word-wrap: break-word;     /* IE11 兼容回退 */
+    word-wrap: break-word;     /* 旧浏览器回退 */
     overflow-wrap: anywhere;
     word-break: break-word;
 }
@@ -1483,6 +1483,12 @@ tbody tr:nth-child(even) {
 }
 
 .about-support {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+}
+
+.about-browser {
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     margin-bottom: 8px;

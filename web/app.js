@@ -1,4 +1,4 @@
-/* DacatDHCP - IE11 兼容 JavaScript */
+/* DacatDHCP 管理界面 JavaScript (ES5 语法) */
 /* 版本号从 /api/version 动态获取，禁止在前端硬编码 */
 /* 严禁使用: fetch, Promise, async/await, 箭头函数, 可选链, 模板字符串 */
 
@@ -22,7 +22,7 @@
     // ---- 工具函数 ----
 
     // P0安全: 从 <meta name="dacat-csrf-token"> 读取 CSRF 令牌
-    // 使用 getElementsByTagName 兼容 IE11(不支持 querySelector meta 选择器的属性过滤)
+    // 使用 getElementsByTagName (广泛兼容)
     // 令牌由后端 handleIndex 注入,写接口 AJAX 必须携带 X-Dacat-CSRF-Token
     function getCSRFToken() {
         var metas = document.getElementsByTagName("meta");
@@ -174,32 +174,25 @@
                "-" + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
     }
 
-    // ---- P0安全: 事件绑定(移除 HTML 内联 onclick/onchange,统一通过 addEventListener/attachEvent) ----
+    // ---- P0安全: 事件绑定(移除 HTML 内联 onclick/onchange,统一通过 addEventListener) ----
+    // IE 兼容分支已移除: ie11-check.js 在 app.js 之前加载,IE 环境已被替换为不支持页面
 
-    // 兼容 IE11 (attachEvent) 和现代浏览器 (addEventListener) 的点击事件绑定
+    // 点击事件绑定(统一使用 addEventListener)
     function bindClick(id, handler) {
         var el = document.getElementById(id);
         if (!el) return;
-        if (el.attachEvent) {
-            el.attachEvent("onclick", handler);
-        } else {
-            el.addEventListener("click", handler);
-        }
+        el.addEventListener("click", handler);
     }
 
-    // 兼容 IE11 和现代浏览器的 change 事件绑定
+    // change 事件绑定(统一使用 addEventListener)
     function bindChange(id, handler) {
         var el = document.getElementById(id);
         if (!el) return;
-        if (el.attachEvent) {
-            el.attachEvent("onchange", handler);
-        } else {
-            el.addEventListener("change", handler);
-        }
+        el.addEventListener("change", handler);
     }
 
     // P0安全: 统一绑定所有按钮事件,替代 HTML 内联 onclick/onchange
-    // CSP script-src 不依赖 unsafe-inline,所有事件通过 addEventListener/attachEvent 绑定
+    // CSP script-src 不依赖 unsafe-inline,所有事件通过 addEventListener 绑定
     function bindEvents() {
         // 顶部导航: 语言切换、主题、设置、关于
         bindClick("lang-zh", function () { switchLang("zh-CN"); });
@@ -921,7 +914,7 @@
 
     // ---- V10新增: 日志操作 ----
 
-    // 导出日志: 将当前日志框内容下载为文件(IE11 兼容)
+    // 导出日志: 将当前日志框内容下载为文件
     window.exportLogs = function () {
         var box = document.getElementById("log-box");
         if (!box) return;
@@ -932,19 +925,15 @@
         }
         var filename = "dhcpsrv-" + formatStamp(new Date()) + ".log";
         var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-        // IE11 使用 msSaveBlob
-        if (window.navigator && window.navigator.msSaveBlob) {
-            window.navigator.msSaveBlob(blob, filename);
-        } else {
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement("a");
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-        }
+        // 统一使用 Blob + createObjectURL 下载(IE 兼容分支已移除,ie11-check.js 已拦截 IE)
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     };
 
     // V12重构: 清空日志调用真实 POST /api/logs/clear 接口
@@ -1025,7 +1014,7 @@
         var msg = (err && err.message) ? err.message : "Failed to save language";
         var code = (err && err.code) ? err.code : "";
         var text = window.I18N ? I18N.teByCode(code, msg) : msg;
-        // 使用原生 alert 兼容 IE11,不引入额外 UI 组件
+        // 使用原生 alert,不引入额外 UI 组件
         try {
             window.alert(text);
         } catch (e) {
@@ -1206,39 +1195,25 @@
         }
     }
 
-    // 绑定网卡选择事件
-    document.getElementById("adapter-select").attachEvent
-        ? document.getElementById("adapter-select").attachEvent("onchange", onAdapterChange)
-        : document.getElementById("adapter-select").addEventListener("change", onAdapterChange);
+    // 绑定网卡选择事件(统一使用 addEventListener)
+    document.getElementById("adapter-select").addEventListener("change", onAdapterChange);
 
     // V15新增: 绑定地址池输入事件,用户开始手动编辑时使在途推荐请求失效
-    // 兼容 IE11 (attachEvent) 和现代浏览器 (addEventListener)
+    // 统一使用 addEventListener(IE 兼容分支已移除,ie11-check.js 已拦截 IE)
     (function () {
         var poolStartEl = document.getElementById("pool-start");
         var poolEndEl = document.getElementById("pool-end");
         var bindInput = function (el) {
             if (!el) return;
-            if (el.attachEvent) {
-                el.attachEvent("oninput", onPoolInput);
-                el.attachEvent("onpropertychange", function () {
-                    // IE11 oninput 兜底: propertychange 监听 value 属性变化
-                    if (window.event && window.event.propertyName === "value") onPoolInput();
-                });
-            } else {
-                el.addEventListener("input", onPoolInput);
-            }
+            el.addEventListener("input", onPoolInput);
         };
         bindInput(poolStartEl);
         bindInput(poolEndEl);
     })();
 
-    // 页面加载完成后初始化
+    // 页面加载完成后初始化(统一使用 DOMContentLoaded,IE 兼容分支已移除)
     if (document.readyState === "complete" || document.readyState === "interactive") {
         init();
-    } else if (document.attachEvent) {
-        document.attachEvent("onreadystatechange", function () {
-            if (document.readyState === "complete") init();
-        });
     } else {
         document.addEventListener("DOMContentLoaded", init);
     }

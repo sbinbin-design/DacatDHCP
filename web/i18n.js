@@ -1,5 +1,5 @@
 /* DacatDHCP 国际化资源 (zh-CN / en-US) */
-/* IE11 兼容: 仅使用 var/function,禁止 const/let/箭头函数/模板字符串 */
+/* 保持 ES5 语法: 仅使用 var/function,禁止 const/let/箭头函数/模板字符串 */
 /* 统一管理界面文案,禁止在 HTML/JS 中硬编码固定文字 */
 /* DHCP 原始日志内容保持原样,只翻译界面标签和程序自身生成的提示 */
 /* V10新增: 后端错误码映射,英文界面不直接展示固定中文错误 */
@@ -141,6 +141,7 @@
             "about.copyright": "版权",
             "about.description": "DacatDHCP 是一款 Windows 便携式轻量 DHCP 服务工具，通过单 EXE 提供图形化管理界面。",
             "about.support": "正式支持 Windows 10/11、Windows Server 2016+",
+            "about.browser": "管理界面要求 Microsoft Edge 或 Google Chrome，不支持 Internet Explorer 11",
             "about.warning": "本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。",
             // V14新增: 关于弹窗技术支持与开源项目链接文案
             "about.tech_support": "技术支持",
@@ -265,6 +266,7 @@
             "about.copyright": "Copyright",
             "about.description": "DacatDHCP is a portable lightweight DHCP service tool for Windows, providing a graphical management interface in a single EXE.",
             "about.support": "Officially supports Windows 10/11, Windows Server 2016+",
+            "about.browser": "Management UI requires Microsoft Edge or Google Chrome; Internet Explorer 11 is not supported.",
             "about.warning": "This tool is only for self-hosted, test, or isolated networks. Do not enable it on production networks that already have a DHCP service.",
             // V14新增: about dialog technical support and open source project link labels
             "about.tech_support": "Technical Support",

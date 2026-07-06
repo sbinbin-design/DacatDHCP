@@ -219,7 +219,7 @@ func TestSecurity_LegitimateOriginPasses(t *testing.T) {
 	}
 }
 
-// TestSecurity_MissingOriginNotRejected 缺少 Origin 不单独拒绝(IE11 兼容)
+// TestSecurity_MissingOriginNotRejected 缺少 Origin 不单独拒绝(兼容缺少 Origin/Referer 的本地请求场景)
 func TestSecurity_MissingOriginNotRejected(t *testing.T) {
 	app := newSecurityTestApp(t)
 	handler := app.securityMiddleware(app.buildMux())
@@ -230,7 +230,7 @@ func TestSecurity_MissingOriginNotRejected(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("缺少 Origin/Referer 的 GET 请求应通过(IE11 兼容), 实际 %d", w.Code)
+		t.Errorf("缺少 Origin/Referer 的 GET 请求应通过(兼容缺少 Origin/Referer 的本地请求场景), 实际 %d", w.Code)
 	}
 }
 

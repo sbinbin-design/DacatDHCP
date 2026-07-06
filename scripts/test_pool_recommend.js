@@ -25,7 +25,6 @@ function makeElement(id) {
         checked: false,
         _attrs: {},
         _listeners: {},
-        _attachEvents: {},
         setAttribute: function (name, val) { this._attrs[name] = val; },
         getAttribute: function (name) { return this._attrs[name] !== undefined ? this._attrs[name] : null; },
         appendChild: function (child) { return child; },
@@ -33,9 +32,6 @@ function makeElement(id) {
         querySelectorAll: function () { return []; },
         addEventListener: function (type, handler) {
             (this._listeners[type] = this._listeners[type] || []).push(handler);
-        },
-        attachEvent: function (type, handler) {
-            (this._attachEvents[type] = this._attachEvents[type] || []).push(handler);
         },
         remove: function () {
             if (this.options.length > 1) this.options.length = this.options.length - 1;
@@ -57,7 +53,6 @@ const documentMock = {
     getElementsByName: function () { return []; },
     documentElement: makeElement("html"),
     readyState: "complete",
-    attachEvent: null,
     addEventListener: function () {}
 };
 
@@ -121,17 +116,17 @@ xhrQueue.length = 0;
 
 // ==== 测试辅助函数 ====
 
-// 触发元素的 change 事件 (attachEvent 路径用 onchange, addEventListener 路径用 change)
+// 触发元素的 change 事件 (app.js 已统一使用 addEventListener,仅监听 change)
 function triggerChange(id) {
     const el = getElement(id);
-    const handlers = (el._listeners["change"] || []).concat(el._attachEvents["onchange"] || []);
+    const handlers = el._listeners["change"] || [];
     handlers.forEach(function (fn) { fn({}); });
 }
 
-// 触发元素的 input 事件 (attachEvent 路径用 oninput, addEventListener 路径用 input)
+// 触发元素的 input 事件 (app.js 已统一使用 addEventListener,仅监听 input)
 function triggerInput(id) {
     const el = getElement(id);
-    const handlers = (el._listeners["input"] || []).concat(el._attachEvents["oninput"] || []);
+    const handlers = el._listeners["input"] || [];
     handlers.forEach(function (fn) { fn({}); });
 }
 

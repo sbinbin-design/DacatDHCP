@@ -1,7 +1,7 @@
 /* DacatDHCP 主题管理 (light / dark) */
 /* V10重构: 仅保留 light/dark 两种主题,首次默认 light,删除"跟随系统"选项 */
 /* 主题选择写入 localStorage,刷新或重启后保持;太阳/月亮图标状态与实际主题一致 */
-/* IE11 兼容: 仅使用 var/function,禁止 const/let/箭头函数/模板字符串 */
+/* 保持 ES5 语法: 仅使用 var/function,禁止 const/let/箭头函数/模板字符串 */
 
 (function (window) {
     "use strict";

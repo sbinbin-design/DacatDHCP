@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- P0安全: CSRF 令牌占位符,由后端 handleIndex 替换为真实令牌,前端 AJAX 读取后写入 X-Dacat-CSRF-Token -->
@@ -11,6 +10,8 @@
     <title>DacatDHCP</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css">
+    <!-- IE11 检测脚本必须在 theme.js/i18n.js/app.js 之前加载;检测到 IE11 时替换为不支持浏览器页面 -->
+    <script src="ie11-check.js"></script>
     <!-- 主题管理脚本必须在 style.css 之后、body 渲染前加载,避免主题闪烁 -->
     <script src="theme.js"></script>
 </head>
@@ -339,6 +340,7 @@
                     <div class="about-row"><span class="about-label" data-i18n="about.open_source">开源项目</span><a class="about-link" href="https://github.com/sbinbin-design/DacatDHCP" target="_blank" rel="noopener noreferrer">https://github.com/sbinbin-design/DacatDHCP</a></div>
                 </div>
                 <p class="about-support" data-i18n="about.support">正式支持 Windows 10/11、Windows Server 2016+</p>
+                <p class="about-browser" data-i18n="about.browser">管理界面要求 Microsoft Edge 或 Google Chrome，不支持 Internet Explorer 11</p>
                 <p class="about-warning" data-i18n="about.warning">本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。</p>
             </div>
             <div class="modal-footer">

@@ -152,7 +152,8 @@ func (a *AppServer) buildMux() *http.ServeMux {
 	// 新增: 国际化资源与主题管理脚本路由,通过 embed 编译进单 EXE
 	mux.HandleFunc("/i18n.js", a.handleStatic("i18n.js", "application/javascript"))
 	mux.HandleFunc("/theme.js", a.handleStatic("theme.js", "application/javascript"))
-	mux.HandleFunc("/favicon.ico", a.handleStatic("dhcp.ico", "image/x-icon")) // V1修复: Web favicon
+	mux.HandleFunc("/ie11-check.js", a.handleStatic("ie11-check.js", "application/javascript")) // IE11 检测脚本,在 theme.js 之前加载
+	mux.HandleFunc("/favicon.ico", a.handleStatic("dhcp.ico", "image/x-icon"))                  // V1修复: Web favicon
 
 	// API 路由
 	mux.HandleFunc("/api/adapters", a.handleAdapters)

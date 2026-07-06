@@ -27,12 +27,21 @@ DacatDHCP is a portable lightweight DHCP service tool for Windows. It packages t
 
 ## Supported Systems
 
-Officially supported:
+Officially supported operating systems:
 
 - Windows 10 / Windows 11
 - Windows Server 2016 and later
 
 Administrator privileges are required (the DHCP service binds to port 67). The program automatically requests elevation on startup.
+
+### Browser Requirements
+
+The management UI (`http://127.0.0.1:8765`) requires one of the following browsers:
+
+- Microsoft Edge
+- Google Chrome
+
+Internet Explorer 11 is not supported. Opening the management URL in IE11 displays an upgrade-browser notice and the management UI is not loaded.
 
 ## How to Run
 

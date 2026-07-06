@@ -102,7 +102,7 @@ func isJSONContentType(ct string) bool {
 // 1. 设置安全响应头(所有响应)
 // 2. 校验 Host 与实际监听地址完全一致,拒绝 DNS Rebinding
 // 3. Origin 存在时必须与 http://127.0.0.1:port 完全一致;为 null 或外部来源拒绝
-// 4. Referer 存在时同样校验;缺少 Origin/Referer 不单独拒绝(兼容 IE11)
+// 4. Referer 存在时同样校验;缺少 Origin/Referer 不单独拒绝(兼容缺少 Origin/Referer 的本地请求场景)
 // 5. 写方法校验 CSRF 令牌和 Content-Type,限制请求体大小为 64KB
 func (a *AppServer) securityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
