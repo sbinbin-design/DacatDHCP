@@ -357,7 +357,11 @@
         // 语言新增: 不支持的语言代码,PUT /api/language 校验失败时返回
         "invalid_language":    {zh: "不支持的语言",                                      en: "Unsupported language"},
         // 语言新增: 语言保存到配置文件失败,内存语言已回滚
-        "language_save_failed": {zh: "语言保存失败",                                     en: "Failed to save language"}
+        "language_save_failed": {zh: "语言保存失败",                                     en: "Failed to save language"},
+        // V1.0.2新增: 地址池跨网段错误码,前端提供完整中英文文案
+        "pool_subnet_mismatch":    {zh: "地址池必须与所选网卡处于同一网段",                    en: "The DHCP pool must be in the same subnet as the selected adapter"},
+        // V1.0.2新增: 网关跨网段错误码,前端提供完整中英文文案
+        "gateway_subnet_mismatch": {zh: "网关必须与地址池处于同一网段",                       en: "The gateway must be in the same subnet as the DHCP pool"}
     };
 
     // 当前语言,默认 zh-CN

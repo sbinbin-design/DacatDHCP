@@ -446,6 +446,11 @@ func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if cfg.PoolEnd != "" {
 			poolEnd = net.ParseIP(cfg.PoolEnd)
 		}
+		// V1.0.2新增: 保存配置前校验地址池和网关必须与网卡同子网（早于 validateGateway 拦截）
+		if code, err := validatePoolSubnet(adapterIP, subnetMask, cfg.Gateway, poolStart, poolEnd); err != nil {
+			writeError(w, http.StatusBadRequest, code, err.Error())
+			return
+		}
 		// 复用统一校验函数（禁止重复编写判断逻辑）
 		_, err := validateGateway(adapterIP, subnetMask, cfg.Gateway, poolStart, poolEnd)
 		if err != nil {
@@ -557,6 +562,12 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	poolStart := net.ParseIP(req.PoolStart)
 	poolEnd := net.ParseIP(req.PoolEnd)
 
+	// V1.0.2新增: 启动服务前校验地址池和网关必须与网卡同子网（早于 validateGateway 拦截）
+	if code, err := validatePoolSubnet(adapterIP, subnetMask, req.Gateway, poolStart, poolEnd); err != nil {
+		a.mu.Unlock()
+		writeError(w, http.StatusBadRequest, code, err.Error())
+		return
+	}
 	// V2新增: 启动前再次执行完整后端校验（禁止仅依赖前端或保存接口校验）
 	// V2.1扩展: 网关校验包含地址池冲突检查（含边界）
 	gatewayIP, err := validateGateway(adapterIP, subnetMask, req.Gateway, poolStart, poolEnd)
@@ -1063,6 +1074,45 @@ func sameSubnetIPv4(a, b net.IP, mask net.IPMask) bool {
 	return true
 }
 
+// validatePoolSubnet 校验地址池和网关必须与所选网卡处于同一子网（V1.0.2新增）
+// 使用 IP 与子网掩码按位计算网段（复用 sameSubnetIPv4），禁止用字符串前缀判断
+// adapterIP/subnetMask 为 nil 时跳过子网校验（用于配置保存时网卡未选定的场景）
+// poolStart/poolEnd 为 nil 时跳过对应地址的子网校验
+// gateway 为空时跳过网关子网校验
+// 返回稳定错误码（pool_subnet_mismatch / gateway_subnet_mismatch）和错误；合法时返回 ("", nil)
+func validatePoolSubnet(adapterIP net.IP, subnetMask net.IPMask, gateway string, poolStart, poolEnd net.IP) (string, error) {
+	// 网卡信息不足时无法进行子网校验
+	if adapterIP == nil || len(subnetMask) < 4 {
+		return "", nil
+	}
+
+	// 校验地址池起始 IP 与网卡同子网
+	if poolStart != nil {
+		if ps4 := poolStart.To4(); ps4 != nil && !sameSubnetIPv4(adapterIP, ps4, subnetMask) {
+			return errCodePoolSubnetMismatch, fmt.Errorf("地址池必须与所选网卡处于同一网段")
+		}
+	}
+	// 校验地址池结束 IP 与网卡同子网
+	if poolEnd != nil {
+		if pe4 := poolEnd.To4(); pe4 != nil && !sameSubnetIPv4(adapterIP, pe4, subnetMask) {
+			return errCodePoolSubnetMismatch, fmt.Errorf("地址池必须与所选网卡处于同一网段")
+		}
+	}
+
+	// 校验网关与地址池同子网（地址池已校验与网卡同子网，故等价于与网卡同子网）
+	gateway = strings.TrimSpace(gateway)
+	if gateway != "" {
+		gw := net.ParseIP(gateway)
+		if gw != nil {
+			if gw4 := gw.To4(); gw4 != nil && !sameSubnetIPv4(adapterIP, gw4, subnetMask) {
+				return errCodeGatewaySubnetMismatch, fmt.Errorf("网关必须与地址池处于同一网段")
+			}
+		}
+	}
+
+	return "", nil
+}
+
 // ipSliceToStrings 将 []net.IP 转换为规范化字符串切片（V2新增）
 // 用于将校验后的 DNS 列表存入配置；空切片返回 nil
 func ipSliceToStrings(ips []net.IP) []string {
@@ -1224,26 +1274,28 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 // 后端错误优先返回稳定 code,同时保留 msg 兼容旧前端
 // V13: 补齐 invalid_gateway/invalid_dns,所有 API 错误统一非空 code
 const (
-	errCodeMethodNotAllowed  = "method_not_allowed"
-	errCodeServiceRunning    = "service_running"
-	errCodeServiceNotRunning = "service_not_running"
-	errCodeServiceClosing    = "service_closing"
-	errCodeInvalidConfig     = "invalid_config"
-	errCodeInvalidRequest    = "invalid_request"
-	errCodeMissingAdapter    = "missing_adapter"
-	errCodeAdapterNotFound   = "adapter_not_found"
-	errCodeAdapterNoIPv4     = "adapter_no_ipv4"
-	errCodeAdapterDown       = "adapter_down"
-	errCodePoolTooLarge      = "pool_too_large"
-	errCodePoolSpecialAddr   = "pool_special_addr"
-	errCodePoolOrderInvalid  = "pool_order_invalid"
-	errCodeGatewayInPool     = "gateway_in_pool"
-	errCodeBindPort67        = "bind_port_67"
-	errCodeInternalError     = "internal_error"     // V12新增: 日志清空等内部错误
-	errCodeInvalidGateway    = "invalid_gateway"    // V13新增: 网关地址无效/非同子网/网络地址/广播地址
-	errCodeInvalidDNS        = "invalid_dns"        // V13新增: DNS 地址无效
-	errCodeDNSTooMany        = "dns_too_many"       // V14新增: DNS 数量超限(独立稳定码,前端完整文案)
-	errCodeConfigSaveFailed  = "config_save_failed" // V14新增: 配置写入文件失败
+	errCodeMethodNotAllowed      = "method_not_allowed"
+	errCodeServiceRunning        = "service_running"
+	errCodeServiceNotRunning     = "service_not_running"
+	errCodeServiceClosing        = "service_closing"
+	errCodeInvalidConfig         = "invalid_config"
+	errCodeInvalidRequest        = "invalid_request"
+	errCodeMissingAdapter        = "missing_adapter"
+	errCodeAdapterNotFound       = "adapter_not_found"
+	errCodeAdapterNoIPv4         = "adapter_no_ipv4"
+	errCodeAdapterDown           = "adapter_down"
+	errCodePoolTooLarge          = "pool_too_large"
+	errCodePoolSpecialAddr       = "pool_special_addr"
+	errCodePoolOrderInvalid      = "pool_order_invalid"
+	errCodeGatewayInPool         = "gateway_in_pool"
+	errCodeBindPort67            = "bind_port_67"
+	errCodeInternalError         = "internal_error"          // V12新增: 日志清空等内部错误
+	errCodeInvalidGateway        = "invalid_gateway"         // V13新增: 网关地址无效/非同子网/网络地址/广播地址
+	errCodeInvalidDNS            = "invalid_dns"             // V13新增: DNS 地址无效
+	errCodeDNSTooMany            = "dns_too_many"            // V14新增: DNS 数量超限(独立稳定码,前端完整文案)
+	errCodeConfigSaveFailed      = "config_save_failed"      // V14新增: 配置写入文件失败
+	errCodePoolSubnetMismatch    = "pool_subnet_mismatch"    // V1.0.2新增: 地址池与网卡不在同一子网
+	errCodeGatewaySubnetMismatch = "gateway_subnet_mismatch" // V1.0.2新增: 网关与地址池不在同一子网
 )
 
 // writeError V11新增: 写入带稳定错误码的 JSON 响应
