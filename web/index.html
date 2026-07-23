@@ -275,6 +275,43 @@
                     </div>
                 </div>
             </section>
+
+            <!-- V1.0.3新增: MAC-IP 固定映射管理区,跨三列布局 -->
+            <section class="card card-reservations grid-area-reservations">
+                <div class="card-title-row">
+                    <h2 class="card-title card-title-inline">
+                        <svg class="title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                        <span data-i18n="section.reservations">MAC-IP 映射</span>
+                    </h2>
+                    <div class="title-right">
+                        <span class="lease-total"><span data-i18n="resv.total">总数</span>: <span id="resv-total-count">0</span></span>
+                        <button type="button" class="btn-mini" id="btn-resv-add">
+                            <svg class="btn-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            <span data-i18n="resv.add">新增映射</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table id="resv-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="resv.col_mac">MAC 地址</th>
+                                <th data-i18n="resv.col_ip">固定 IP</th>
+                                <th data-i18n="resv.col_remark">备注</th>
+                                <th data-i18n="resv.col_enabled">状态</th>
+                                <th data-i18n="resv.col_created">创建时间</th>
+                                <th data-i18n="resv.col_actions">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resv-body">
+                            <tr><td colspan="6" class="empty-state">
+                                <span data-i18n="resv.empty">暂无固定映射，点击"新增映射"添加</span>
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-bottom-hint" data-i18n="resv.hint">固定 IP 必须与当前网卡处于同一网段；位于地址池内的固定 IP 在动态分配时会被自动跳过。</div>
+            </section>
         </main>
 
         <!-- V11重构: 底部贴近页面底部的横向状态栏,取消独立圆角卡片外观 -->
@@ -339,12 +376,59 @@
                     <div class="about-row"><span class="about-label" data-i18n="about.tech_support">技术支持</span><a class="about-link" href="https://dacat.cc" target="_blank" rel="noopener noreferrer">https://dacat.cc</a></div>
                     <div class="about-row"><span class="about-label" data-i18n="about.open_source">开源项目</span><a class="about-link" href="https://github.com/sbinbin-design/DacatDHCP" target="_blank" rel="noopener noreferrer">https://github.com/sbinbin-design/DacatDHCP</a></div>
                 </div>
+                <!-- 免费声明区块: 表达官方版本永久免费、禁止冒充官方、不得删除版权和许可证、不得误导收费 -->
+                <div class="about-notice">
+                    <h4 class="about-notice-title" data-i18n="about.notice_title">免费声明</h4>
+                    <p class="about-notice-text" data-i18n="about.notice_p1">DacatDHCP 官方版本永久免费。</p>
+                    <p class="about-notice-text" data-i18n="about.notice_p2">本工具由 DACAT.CC 发布并维护，官方发布版本可免费使用、复制和分发。任何第三方在分发、修改或再发布本工具时，必须遵守 Apache License 2.0，保留原始版权信息、许可证文件和相关声明。</p>
+                    <p class="about-notice-text" data-i18n="about.notice_p3">请注意：DACAT.CC 不会通过非官方渠道对本工具本体收费。任何第三方不得冒充 DACAT.CC 官方，不得删除或隐藏版权与许可证信息，不得以"官方授权版""付费激活版""商业破解版"等误导性名义销售本工具。</p>
+                    <p class="about-notice-text" data-i18n="about.notice_p4">如你通过第三方付费获得本工具，请优先访问官方 GitHub 或 DACAT.CC 获取免费官方版本。</p>
+                    <div class="about-notice-sources">
+                        <div class="about-row"><span class="about-label" data-i18n="about.notice_website">官方网站</span><a class="about-link" href="https://dacat.cc/dhcp.html" target="_blank" rel="noopener noreferrer">https://dacat.cc/dhcp.html</a></div>
+                        <div class="about-row"><span class="about-label" data-i18n="about.notice_repo">官方仓库</span><a class="about-link" href="https://github.com/sbinbin-design/DacatDHCP" target="_blank" rel="noopener noreferrer">https://github.com/sbinbin-design/DacatDHCP</a></div>
+                        <div class="about-row"><span class="about-label" data-i18n="about.notice_license">开源许可证</span><span>Apache License 2.0</span></div>
+                    </div>
+                </div>
                 <p class="about-support" data-i18n="about.support">正式支持 Windows 10/11、Windows Server 2016+</p>
                 <p class="about-browser" data-i18n="about.browser">管理界面要求 Microsoft Edge 或 Google Chrome，不支持 Internet Explorer 11</p>
                 <p class="about-warning" data-i18n="about.warning">本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-primary" id="btn-about-done" data-i18n="settings.close">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- V1.0.3新增: MAC-IP 固定映射新增/编辑弹窗 -->
+    <div class="modal-overlay" id="resv-modal" style="display:none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="resv-modal-title" data-i18n="resv.add">新增映射</h3>
+                <button type="button" class="modal-close" id="btn-resv-close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="resv-mac" data-i18n="resv.form_mac">MAC 地址</label>
+                    <input type="text" id="resv-mac" data-i18n-placeholder="resv.mac_placeholder" placeholder="00:11:22:33:44:55 或 00-11-22-33-44-55">
+                </div>
+                <div class="form-group">
+                    <label for="resv-ip" data-i18n="resv.form_ip">固定 IP</label>
+                    <input type="text" id="resv-ip" data-i18n-placeholder="resv.ip_placeholder" placeholder="如 192.168.1.100">
+                </div>
+                <div class="form-group">
+                    <label for="resv-remark" data-i18n="resv.form_remark">备注（可选）</label>
+                    <input type="text" id="resv-remark" data-i18n-placeholder="resv.remark_placeholder" placeholder="可选备注，便于识别">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="resv-enabled" checked>
+                        <span data-i18n="resv.form_enabled">启用此映射</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-mini btn-mini-ghost" id="btn-resv-cancel" data-i18n="resv.cancel">取消</button>
+                <button type="button" class="btn-primary" id="btn-resv-save" data-i18n="resv.save">保存</button>
             </div>
         </div>
     </div>

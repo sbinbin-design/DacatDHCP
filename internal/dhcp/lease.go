@@ -158,6 +158,225 @@ func NewLeaseStore(poolStart, poolEnd net.IP, serverIP net.IP, subnetMask net.IP
 	}, nil
 }
 
+// AddReservedIPs 将 IP 加入排除集合（V1.0.3新增）
+// 用于将池内的固定映射 IP 排除出动态分配;池外 IP 不影响 excludedInPool 计数
+// 必须在 NewLeaseStore 之后、Start 协程启动之前调用,避免并发访问
+func (s *LeaseStore) AddReservedIPs(ips []net.IP) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, ip := range ips {
+		if ip == nil {
+			continue
+		}
+		ip4 := ip.To4()
+		if ip4 == nil {
+			continue
+		}
+		ipVal := ipToUint32(ip4)
+		// 仅在尚未排除时增加计数,避免重复计数
+		if !s.excluded[ipVal] {
+			s.excluded[ipVal] = true
+			if s.isInPool(ipVal) {
+				s.excludedInPool++
+			}
+		}
+	}
+}
+
+// CreateStaticOffer 为固定映射客户端创建 Pending Offer（DISCOVER 阶段，V1.0.3新增）
+// 用于固定映射命中时,绕过 isInPool/isExcluded 检查直接创建 Pending Offer
+// staticIP 为固定映射的 IP,可能位于动态池内（已加入 excluded）或池外
+// 同一客户端重复 DISCOVER 优先复用已有的 Pending Offer 或有效租约
+func (s *LeaseStore) CreateStaticOffer(mac net.HardwareAddr, clientID []byte, hostname string, staticIP net.IP) (net.IP, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if staticIP == nil || staticIP.To4() == nil {
+		return nil, ErrIPNotAvailable
+	}
+	staticIP4 := staticIP.To4()
+	macKey := mac.String()
+	ipKey := staticIP4.String()
+
+	// 1. 优先复用该 MAC 的有效租约（续约场景）
+	if existing, ok := s.macIndex[macKey]; ok && existing.Status == LeaseActive {
+		if existing.IP.Equal(staticIP4) {
+			return existing.IP, nil
+		}
+		// 已有租约但 IP 不匹配（不应发生,理论上同一 MAC 只有一条固定映射）→ 清理旧租约
+		delete(s.leases, existing.IP.String())
+		delete(s.macIndex, macKey)
+		if len(existing.ClientID) > 0 {
+			delete(s.clientIDIndex, string(existing.ClientID))
+		}
+	}
+
+	// 2. 通过 ClientID 查找有效租约
+	if len(clientID) > 0 {
+		cidKey := string(clientID)
+		if existing, ok := s.clientIDIndex[cidKey]; ok && existing.Status == LeaseActive {
+			if existing.IP.Equal(staticIP4) {
+				return existing.IP, nil
+			}
+			delete(s.leases, existing.IP.String())
+			delete(s.macIndex, existing.MAC.String())
+			delete(s.clientIDIndex, cidKey)
+		}
+	}
+
+	// 3. 复用该 MAC 已有的 Pending Offer（刷新过期时间）
+	if offer, ok := s.offerMAC[macKey]; ok {
+		if offer.IP.Equal(staticIP4) {
+			offer.ExpiresAt = time.Now().Add(PendingOfferTimeout)
+			if hostname != "" {
+				offer.Hostname = hostname
+			}
+			return offer.IP, nil
+		}
+		// 旧 offer 的 IP 不匹配（不应发生）→ 清理旧 offer
+		delete(s.offers, offer.IP.String())
+		delete(s.offerMAC, macKey)
+		if len(offer.ClientID) > 0 {
+			delete(s.offerClientID, string(offer.ClientID))
+		}
+	}
+
+	// 4. 通过 ClientID 查找 Pending Offer
+	if len(clientID) > 0 {
+		cidKey := string(clientID)
+		if offer, ok := s.offerClientID[cidKey]; ok {
+			if offer.IP.Equal(staticIP4) {
+				offer.ExpiresAt = time.Now().Add(PendingOfferTimeout)
+				if hostname != "" {
+					offer.Hostname = hostname
+				}
+				return offer.IP, nil
+			}
+			delete(s.offers, offer.IP.String())
+			delete(s.offerMAC, offer.MAC.String())
+			delete(s.offerClientID, cidKey)
+		}
+	}
+
+	// 5. 检查 staticIP 是否被其他客户端占用（活跃租约）
+	if existing, ok := s.leases[ipKey]; ok && existing.Status == LeaseActive {
+		if existing.MAC.String() != macKey {
+			// 被其他客户端占用（不应发生,因为该 IP 已被排除）
+			return nil, ErrIPNotAvailable
+		}
+	}
+
+	// 6. 检查 staticIP 是否被其他客户端的 Pending Offer 占用
+	if offer, ok := s.offers[ipKey]; ok {
+		if offer.MAC.String() != macKey {
+			return nil, ErrIPNotAvailable
+		}
+		// 同一客户端的 offer,上面 3/4 已处理,此处保险转换
+	}
+
+	// 7. 创建 Pending Offer
+	offer := &PendingOffer{
+		IP:        staticIP4,
+		MAC:       mac,
+		ClientID:  clientID,
+		Hostname:  hostname,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(PendingOfferTimeout),
+	}
+	s.offers[ipKey] = offer
+	s.offerMAC[macKey] = offer
+	if len(clientID) > 0 {
+		s.offerClientID[string(clientID)] = offer
+	}
+	return staticIP4, nil
+}
+
+// ConfirmStaticLease 确认固定映射租约（REQUEST 阶段，V1.0.3新增）
+// 用于固定映射命中时,绕过 isInPool/isExcluded 检查直接确认租约
+// requestedIP 必须等于 staticIP,调用方负责校验;不匹配返回 ErrIPNotAvailable
+func (s *LeaseStore) ConfirmStaticLease(mac net.HardwareAddr, clientID []byte, hostname string, requestedIP net.IP, staticIP net.IP) (*Lease, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if requestedIP == nil || staticIP == nil {
+		return nil, ErrIPNotAvailable
+	}
+	reqIP4 := requestedIP.To4()
+	staticIP4 := staticIP.To4()
+	if reqIP4 == nil || staticIP4 == nil {
+		return nil, ErrIPNotAvailable
+	}
+
+	// 请求的 IP 必须等于固定映射 IP
+	if !reqIP4.Equal(staticIP4) {
+		return nil, ErrIPNotAvailable
+	}
+
+	macKey := mac.String()
+	ipKey := reqIP4.String()
+
+	// 1. 该 MAC 是否已有该 IP 的活跃租约 → 续约
+	if existing, ok := s.macIndex[macKey]; ok && existing.Status == LeaseActive {
+		if existing.IP.Equal(reqIP4) {
+			existing.AssignedAt = time.Now()
+			existing.ExpiresAt = time.Now().Add(s.leaseDur)
+			if hostname != "" {
+				existing.Hostname = hostname
+			}
+			return existing, nil
+		}
+	}
+
+	// 2. 通过 ClientID 查找活跃租约
+	if len(clientID) > 0 {
+		cidKey := string(clientID)
+		if existing, ok := s.clientIDIndex[cidKey]; ok && existing.Status == LeaseActive {
+			if existing.IP.Equal(reqIP4) {
+				existing.AssignedAt = time.Now()
+				existing.ExpiresAt = time.Now().Add(s.leaseDur)
+				if hostname != "" {
+					existing.Hostname = hostname
+				}
+				return existing, nil
+			}
+		}
+	}
+
+	// 3. 该 MAC 是否有该 IP 的 Pending Offer → 转为活跃租约
+	if offer, ok := s.offerMAC[macKey]; ok && offer.IP.Equal(reqIP4) {
+		return s.convertOfferToLease(offer, mac, clientID, hostname), nil
+	}
+
+	// 4. 通过 ClientID 查找 Pending Offer
+	if len(clientID) > 0 {
+		cidKey := string(clientID)
+		if offer, ok := s.offerClientID[cidKey]; ok && offer.IP.Equal(reqIP4) {
+			return s.convertOfferToLease(offer, mac, clientID, hostname), nil
+		}
+	}
+
+	// 5. 检查该 IP 是否被其他客户端占用（活跃租约）→ NAK
+	if existing, ok := s.leases[ipKey]; ok && existing.Status == LeaseActive {
+		if existing.MAC.String() != macKey {
+			return nil, ErrIPNotAvailable
+		}
+	}
+
+	// 6. 检查该 IP 是否被其他客户端的 Pending Offer 占用
+	if offer, ok := s.offers[ipKey]; ok {
+		if offer.MAC.String() != macKey {
+			return nil, ErrIPNotAvailable
+		}
+		// 同一客户端的 offer（保险起见转换）
+		return s.convertOfferToLease(offer, mac, clientID, hostname), nil
+	}
+
+	// 7. IP 空闲,直接创建活跃租约（绕过 isInPool/isExcluded 检查）
+	lease := s.createLease(reqIP4, mac, clientID, hostname)
+	return lease, nil
+}
+
 // CreatePendingOffer 为客户端创建 Pending Offer（DISCOVER 阶段）
 // V1修复: DISCOVER 仅创建 Pending Offer，不直接创建活跃租约
 // 同一客户端重复 DISCOVER 优先复用已有的 Pending Offer 或有效租约
@@ -518,15 +737,38 @@ func (s *LeaseStore) List() []LeaseJSON {
 
 // PoolStats 返回地址池统计信息
 // V1修复: 使用起止地址差值计算总量，仅统计实际租约和 Pending Offer，不得逐个遍历巨大地址池
+// V1.0.3修复: used 只统计 IP 在动态地址池范围内、且不是 reserved/excluded 的动态租约和 Pending Offer;
+//
+//	池外固定映射租约仍保留在 leases/offers 中供列表展示,但不计入动态池已用数;
+//	池内固定映射租约(其 IP 已加入 excluded 集合)同样不计入 used,避免统计不一致
 func (s *LeaseStore) PoolStats() (total int, used int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// 总量 = 起止差值 + 1 - 池内排除地址数量
+	// 总量 = 起止差值 + 1 - 池内排除地址数量(含池内保留 IP)
 	total = int(s.pool[1]-s.pool[0]+1) - s.excludedInPool
 
-	// 已用 = 活跃租约 + Pending Offer
-	used = len(s.leases) + len(s.offers)
+	// 已用 = 池内且非 excluded 的活跃租约 + 池内且非 excluded 的 Pending Offer
+	// V1.0.3修复: 池内保留 IP 的租约虽在 leases/offers 中,但其 IP 在 excluded 集合,不计入 used
+	used = 0
+	for _, l := range s.leases {
+		if l == nil {
+			continue
+		}
+		ipVal := ipToUint32(l.IP.To4())
+		if s.isInPool(ipVal) && !s.isExcluded(ipVal) {
+			used++
+		}
+	}
+	for _, o := range s.offers {
+		if o == nil {
+			continue
+		}
+		ipVal := ipToUint32(o.IP.To4())
+		if s.isInPool(ipVal) && !s.isExcluded(ipVal) {
+			used++
+		}
+	}
 
 	return
 }

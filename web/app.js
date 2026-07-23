@@ -18,6 +18,9 @@
     var poolReqSeq = 0;        // V15新增: 地址池推荐请求序号,旧回调不得覆盖新网卡或用户已编辑的起止 IP
     var poolUserEditing = false; // V15新增: 用户开始手动编辑地址池时置 true,使在途推荐请求失效
     var langReqSeq = 0;        // 语言新增: 语言切换请求序号,过期响应不得覆盖用户最后一次选择
+    var reservationsList = [];  // V1.0.3新增: 固定映射缓存,GET 拉取后用于本地增删改后整体 PUT
+    var editingResvMac = null;  // V1.0.3新增: 当前编辑的 MAC(null 表示新增)
+    var serviceRunning = false; // V1.0.3新增: 服务运行状态标记,用于禁用固定映射行内操作按钮(与 btn-resv-add 一致)
 
     // ---- 工具函数 ----
 
@@ -226,6 +229,12 @@
         // 设置弹窗语言单选变化
         bindChange("settings-lang-zh", function () { onSettingsLangChange("zh-CN"); });
         bindChange("settings-lang-en", function () { onSettingsLangChange("en-US"); });
+
+        // V1.0.3新增: 固定映射管理按钮
+        bindClick("btn-resv-add", function () { openResvModal(null); });
+        bindClick("btn-resv-close", function () { closeResvModal(); });
+        bindClick("btn-resv-cancel", function () { closeResvModal(); });
+        bindClick("btn-resv-save", function () { saveResv(); });
     }
 
     // P0安全: 检测 CSRF 令牌失效错误,显示专用提示(不附加失败前缀)
@@ -272,6 +281,8 @@
         refreshStatus();
         refreshLeases();
         refreshLogs();
+        // V1.0.3新增: 加载固定映射列表
+        loadReservations();
         // V10新增: 启动本机时间时钟(每秒更新)
         startClock();
         // 启动轮询
@@ -586,6 +597,10 @@
 
             // V10新增: 记录真实启动时间,供时钟定时器计算运行时间(禁止前端伪造)
             lastStartedAt = (status.running && status.started_at) ? status.started_at : null;
+            // V1.0.3新增: 记录服务运行状态,用于禁用固定映射行内操作按钮;仅在状态变化时重渲染表格
+            var prevRunning = serviceRunning;
+            serviceRunning = !!status.running;
+            if (prevRunning !== serviceRunning) renderReservations();
 
             if (status.running) {
                 // V11修复: status-state 必须设置 running/stopped 类,确保颜色生效
@@ -643,6 +658,9 @@
         var btnClear = document.getElementById("btn-dns-clear");
         if (btnAdd) btnAdd.disabled = disabled;
         if (btnClear) btnClear.disabled = disabled;
+        // V1.0.3新增: 固定映射新增按钮与配置一同锁定,运行时禁止修改
+        var btnResvAdd = document.getElementById("btn-resv-add");
+        if (btnResvAdd) btnResvAdd.disabled = disabled;
     }
 
     // ---- 启动服务 ----
@@ -1086,6 +1104,8 @@
         // 新增: 刷新动态生成的文案(状态、按钮、空状态),保持界面与当前状态一致
         refreshStatus();
         refreshLeases();
+        // V1.0.3新增: 刷新固定映射表格文案(状态徽章、按钮、空状态)
+        renderReservations();
     }
 
     // V10新增: 更新语言分段控件的 active 状态
@@ -1210,6 +1230,264 @@
         bindInput(poolStartEl);
         bindInput(poolEndEl);
     })();
+
+    // ---- V1.0.3新增: MAC-IP 固定映射管理(CRUD) ----
+    // 后端契约: GET /api/reservations 返回 {reservations:[...]},PUT 替换整个列表
+    // 字段: mac/ip/remark/enabled(bool)/created_at/updated_at,MAC 统一为大写冒号格式
+    // 所有写操作走 PUT 全量提交,后端做格式/重复/子网/冲突校验并返回错误码
+
+    // 加载固定映射列表(GET /api/reservations)
+    function loadReservations() {
+        get("/api/reservations", function (err, data) {
+            if (err) {
+                // CSRF 错误单独提示;其他加载错误静默回退到空列表,避免初始化噪声
+                if (handleCSRFError(err)) return;
+                reservationsList = [];
+                renderReservations();
+                return;
+            }
+            reservationsList = (data && data.reservations) ? data.reservations : [];
+            renderReservations();
+        });
+    }
+
+    // 渲染固定映射表格 tbody
+    // 行内按钮使用 data-resv-action/data-resv-mac 属性,渲染后统一绑定事件
+    function renderReservations() {
+        var tbody = document.getElementById("resv-body");
+        if (!tbody) return;
+        var totalEl = document.getElementById("resv-total-count");
+        if (totalEl) totalEl.innerHTML = String(reservationsList.length);
+        // 空状态: 与租约空状态一致的图标+文案结构
+        if (reservationsList.length === 0) {
+            var emptyText = I18N ? I18N.t("resv.empty") : "暂无固定映射，点击\"新增映射\"添加";
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">' +
+                '<svg class="empty-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>' +
+                '<span>' + escHtml(emptyText) + '</span></td></tr>';
+            return;
+        }
+        var html = "";
+        for (var i = 0; i < reservationsList.length; i++) {
+            var r = reservationsList[i];
+            var enabled = (r.enabled === true || r.enabled === "true");
+            // 状态徽章: 启用绿色/禁用灰色
+            var badgeClass = enabled ? "resv-badge resv-badge-on" : "resv-badge resv-badge-off";
+            var badgeText = enabled
+                ? (I18N ? I18N.t("resv.status_on") : "启用")
+                : (I18N ? I18N.t("resv.status_off") : "已禁用");
+            // 启用/禁用按钮文案: 当前禁用显示"启用",当前启用显示"禁用"
+            var toggleText = enabled
+                ? (I18N ? I18N.t("resv.disable") : "禁用")
+                : (I18N ? I18N.t("resv.enable") : "启用");
+            var editText = I18N ? I18N.t("resv.edit") : "编辑";
+            var deleteText = I18N ? I18N.t("resv.delete") : "删除";
+            // 服务运行时禁用行内操作(与 btn-resv-add 一致,后端也会拒绝)
+            var disAttr = serviceRunning ? ' disabled' : '';
+            var mac = r.mac || "";
+            // MAC 仅含十六进制和冒号,转义后用于 data-resv-mac 属性
+            var macAttr = escHtml(mac);
+            html += "<tr>";
+            html += '<td class="resv-mac">' + escHtml(mac) + '</td>';
+            html += '<td>' + escHtml(r.ip || "") + '</td>';
+            html += '<td class="resv-remark">' + escHtml(r.remark || "-") + '</td>';
+            html += '<td><span class="' + badgeClass + '">' + escHtml(badgeText) + '</span></td>';
+            html += '<td>' + escHtml(r.created_at || "-") + '</td>';
+            html += '<td><div class="resv-actions">';
+            html += '<button type="button" class="btn-mini" data-resv-action="edit" data-resv-mac="' + macAttr + '"' + disAttr + '>' + escHtml(editText) + '</button>';
+            html += '<button type="button" class="btn-mini" data-resv-action="toggle" data-resv-mac="' + macAttr + '"' + disAttr + '>' + escHtml(toggleText) + '</button>';
+            html += '<button type="button" class="btn-mini btn-resv-delete" data-resv-action="delete" data-resv-mac="' + macAttr + '"' + disAttr + '>' + escHtml(deleteText) + '</button>';
+            html += '</div></td>';
+            html += "</tr>";
+        }
+        tbody.innerHTML = html;
+        // 绑定行内按钮事件(闭包捕获每个按钮引用)
+        var btns = tbody.querySelectorAll("button[data-resv-action]");
+        for (var j = 0; j < btns.length; j++) {
+            (function (btn) {
+                btn.addEventListener("click", function () {
+                    var action = btn.getAttribute("data-resv-action");
+                    var macVal = btn.getAttribute("data-resv-mac");
+                    if (action === "edit") openResvModal(macVal);
+                    else if (action === "toggle") toggleResvEnabled(macVal);
+                    else if (action === "delete") deleteResv(macVal);
+                });
+            })(btns[j]);
+        }
+    }
+
+    // 打开新增/编辑弹窗(mac 为 null 表示新增,否则为编辑指定 MAC)
+    function openResvModal(mac) {
+        editingResvMac = mac;
+        var titleEl = document.getElementById("resv-modal-title");
+        var macInput = document.getElementById("resv-mac");
+        var ipInput = document.getElementById("resv-ip");
+        var remarkInput = document.getElementById("resv-remark");
+        var enabledChk = document.getElementById("resv-enabled");
+        if (mac) {
+            // 编辑: 从缓存查找并填充表单
+            if (titleEl) titleEl.innerHTML = I18N ? I18N.t("resv.edit") : "编辑";
+            var found = null;
+            for (var i = 0; i < reservationsList.length; i++) {
+                if (reservationsList[i].mac === mac) { found = reservationsList[i]; break; }
+            }
+            if (found) {
+                if (macInput) macInput.value = found.mac || "";
+                if (ipInput) ipInput.value = found.ip || "";
+                if (remarkInput) remarkInput.value = found.remark || "";
+                if (enabledChk) enabledChk.checked = (found.enabled === true || found.enabled === "true");
+            }
+        } else {
+            // 新增: 清空表单,默认启用
+            if (titleEl) titleEl.innerHTML = I18N ? I18N.t("resv.add") : "新增映射";
+            if (macInput) macInput.value = "";
+            if (ipInput) ipInput.value = "";
+            if (remarkInput) remarkInput.value = "";
+            if (enabledChk) enabledChk.checked = true;
+        }
+        var modal = document.getElementById("resv-modal");
+        if (modal) modal.style.display = "flex";
+        if (macInput) macInput.focus();
+    }
+
+    // 关闭弹窗并清空表单
+    function closeResvModal() {
+        var modal = document.getElementById("resv-modal");
+        if (modal) modal.style.display = "none";
+        var macInput = document.getElementById("resv-mac");
+        var ipInput = document.getElementById("resv-ip");
+        var remarkInput = document.getElementById("resv-remark");
+        var enabledChk = document.getElementById("resv-enabled");
+        if (macInput) macInput.value = "";
+        if (ipInput) ipInput.value = "";
+        if (remarkInput) remarkInput.value = "";
+        if (enabledChk) enabledChk.checked = true;
+        editingResvMac = null;
+    }
+
+    // 保存(新增或编辑)固定映射
+    // 前端仅做非空校验,MAC/IP 格式、重复、子网、冲突校验由后端 processReservations 完成
+    function saveResv() {
+        var macInput = document.getElementById("resv-mac");
+        var ipInput = document.getElementById("resv-ip");
+        var remarkInput = document.getElementById("resv-remark");
+        var enabledChk = document.getElementById("resv-enabled");
+        var macVal = macInput ? macInput.value.trim() : "";
+        var ipVal = ipInput ? ipInput.value.trim() : "";
+        var remarkVal = remarkInput ? remarkInput.value.trim() : "";
+        var enabledVal = enabledChk ? enabledChk.checked : true;
+
+        if (!macVal) {
+            alert(I18N ? I18N.t("resv.alert_mac_required") : "请输入 MAC 地址");
+            return;
+        }
+        if (!ipVal) {
+            alert(I18N ? I18N.t("resv.alert_ip_required") : "请输入固定 IP 地址");
+            return;
+        }
+
+        // 构建新列表: 编辑时替换匹配 editingResvMac 的项,新增时追加
+        var newList = [];
+        var replaced = false;
+        for (var i = 0; i < reservationsList.length; i++) {
+            if (editingResvMac !== null && reservationsList[i].mac === editingResvMac) {
+                newList.push({ mac: macVal, ip: ipVal, remark: remarkVal, enabled: enabledVal });
+                replaced = true;
+            } else {
+                newList.push(reservationsList[i]);
+            }
+        }
+        if (!replaced) {
+            newList.push({ mac: macVal, ip: ipVal, remark: remarkVal, enabled: enabledVal });
+        }
+
+        // 禁用保存按钮,防止重复提交
+        var saveBtn = document.getElementById("btn-resv-save");
+        if (saveBtn) saveBtn.disabled = true;
+        putReservations(newList, function (err) {
+            if (saveBtn) saveBtn.disabled = false;
+            if (err) {
+                if (handleCSRFError(err)) return;
+                var errMsg = (typeof err === "object" && err) ? err.message : String(err);
+                var errCode = (typeof err === "object" && err) ? err.code : "";
+                var translated = window.I18N ? I18N.teByCode(errCode, errMsg) : errMsg;
+                alert((I18N ? I18N.t("resv.save_fail") : "保存失败: ") + translated);
+                // 失败时重新从服务端加载,确保本地与后端一致(后端未保存)
+                loadReservations();
+                return;
+            }
+            // 成功: 关闭弹窗,从服务端重新加载规范化后的列表
+            closeResvModal();
+            loadReservations();
+        });
+    }
+
+    // 删除单条固定映射(确认后 PUT 全量列表)
+    function deleteResv(mac) {
+        var confirmMsg = I18N ? I18N.t("resv.confirm_delete") : "确定删除此 MAC-IP 映射吗?";
+        if (!confirm(confirmMsg)) return;
+        var newList = [];
+        for (var i = 0; i < reservationsList.length; i++) {
+            if (reservationsList[i].mac !== mac) {
+                newList.push(reservationsList[i]);
+            }
+        }
+        putReservations(newList, function (err) {
+            if (err) {
+                if (handleCSRFError(err)) return;
+                var errMsg = (typeof err === "object" && err) ? err.message : String(err);
+                var errCode = (typeof err === "object" && err) ? err.code : "";
+                var translated = window.I18N ? I18N.teByCode(errCode, errMsg) : errMsg;
+                alert((I18N ? I18N.t("resv.save_fail") : "保存失败: ") + translated);
+                loadReservations();
+                return;
+            }
+            loadReservations();
+        });
+    }
+
+    // 切换启用/禁用状态(直接 PUT 全量列表)
+    function toggleResvEnabled(mac) {
+        var newList = [];
+        for (var i = 0; i < reservationsList.length; i++) {
+            if (reservationsList[i].mac === mac) {
+                // 切换 enabled 标志
+                var item = reservationsList[i];
+                var wasEnabled = (item.enabled === true || item.enabled === "true");
+                newList.push({
+                    mac: item.mac,
+                    ip: item.ip,
+                    remark: item.remark || "",
+                    enabled: !wasEnabled
+                });
+            } else {
+                newList.push(reservationsList[i]);
+            }
+        }
+        putReservations(newList, function (err) {
+            if (err) {
+                if (handleCSRFError(err)) return;
+                var errMsg = (typeof err === "object" && err) ? err.message : String(err);
+                var errCode = (typeof err === "object" && err) ? err.code : "";
+                var translated = window.I18N ? I18N.teByCode(errCode, errMsg) : errMsg;
+                alert((I18N ? I18N.t("resv.save_fail") : "保存失败: ") + translated);
+                loadReservations();
+                return;
+            }
+            loadReservations();
+        });
+    }
+
+    // 统一 PUT /api/reservations 提交全量列表
+    // payload 为 reservations 数组,callback(err): err 为 null 表示成功
+    function putReservations(payload, callback) {
+        ajax("PUT", "/api/reservations", { reservations: payload }, function (err, resp) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            callback(null);
+        });
+    }
 
     // 页面加载完成后初始化(统一使用 DOMContentLoaded,IE 兼容分支已移除)
     if (document.readyState === "complete" || document.readyState === "interactive") {

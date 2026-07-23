@@ -145,7 +145,53 @@
             "about.warning": "本工具仅适用于自建、测试或隔离网络，禁止在已有 DHCP 服务的生产网络中随意启用。",
             // V14新增: 关于弹窗技术支持与开源项目链接文案
             "about.tech_support": "技术支持",
-            "about.open_source": "开源项目"
+            "about.open_source": "开源项目",
+
+            // 免费声明: 表达官方版本永久免费、禁止冒充官方、不得删除版权和许可证、不得误导收费
+            "about.notice_title": "免费声明",
+            "about.notice_p1": "DacatDHCP 官方版本永久免费。",
+            "about.notice_p2": "本工具由 DACAT.CC 发布并维护，官方发布版本可免费使用、复制和分发。任何第三方在分发、修改或再发布本工具时，必须遵守 Apache License 2.0，保留原始版权信息、许可证文件和相关声明。",
+            "about.notice_p3": "请注意：DACAT.CC 不会通过非官方渠道对本工具本体收费。任何第三方不得冒充 DACAT.CC 官方，不得删除或隐藏版权与许可证信息，不得以\"官方授权版\"\"付费激活版\"\"商业破解版\"等误导性名义销售本工具。",
+            "about.notice_p4": "如你通过第三方付费获得本工具，请优先访问官方 GitHub 或 DACAT.CC 获取免费官方版本。",
+            "about.notice_website": "官方网站",
+            "about.notice_repo": "官方仓库",
+            "about.notice_license": "开源许可证",
+
+            // V1.0.3新增: MAC-IP 固定映射管理区
+            "section.reservations": "MAC-IP 映射",
+            "resv.title": "MAC-IP 固定映射",
+            "resv.subtitle": "为指定 MAC 固定分配 IP，DHCP 分配时优先匹配",
+            "resv.add": "新增映射",
+            "resv.edit": "编辑",
+            "resv.delete": "删除",
+            "resv.enable": "启用",
+            "resv.disable": "禁用",
+            "resv.save": "保存",
+            "resv.cancel": "取消",
+            "resv.col_mac": "MAC 地址",
+            "resv.col_ip": "固定 IP",
+            "resv.col_remark": "备注",
+            "resv.col_enabled": "状态",
+            "resv.col_created": "创建时间",
+            "resv.col_actions": "操作",
+            "resv.empty": "暂无固定映射，点击\"新增映射\"添加",
+            "resv.form_mac": "MAC 地址",
+            "resv.form_ip": "固定 IP",
+            "resv.form_remark": "备注（可选）",
+            "resv.form_enabled": "启用此映射",
+            "resv.mac_placeholder": "00:11:22:33:44:55 或 00-11-22-33-44-55",
+            "resv.ip_placeholder": "如 192.168.1.100",
+            "resv.remark_placeholder": "可选备注，便于识别",
+            "resv.hint": "固定 IP 必须与当前网卡处于同一网段；位于地址池内的固定 IP 在动态分配时会被自动跳过。",
+            "resv.status_on": "启用",
+            "resv.status_off": "已禁用",
+            "resv.confirm_delete": "确定删除此 MAC-IP 映射吗?",
+            "resv.save_fail": "保存失败: ",
+            "resv.load_fail": "加载固定映射失败: ",
+            "resv.alert_mac_required": "请输入 MAC 地址",
+            "resv.alert_ip_required": "请输入固定 IP 地址",
+            "resv.running_block": "服务运行中无法修改映射，请先停止服务",
+            "resv.total": "总数"
         },
         "en-US": {
             "_label": "EN",
@@ -270,7 +316,53 @@
             "about.warning": "This tool is only for self-hosted, test, or isolated networks. Do not enable it on production networks that already have a DHCP service.",
             // V14新增: about dialog technical support and open source project link labels
             "about.tech_support": "Technical Support",
-            "about.open_source": "Open Source"
+            "about.open_source": "Open Source",
+
+            // Free Software Notice: official release is free, no impersonation, no removing copyright/license, no misleading paid sales
+            "about.notice_title": "Free Software Notice",
+            "about.notice_p1": "DacatDHCP is free in its official release.",
+            "about.notice_p2": "This tool is published and maintained by DACAT.CC. The official release can be used, copied, and distributed free of charge. Any third-party redistribution, modification, or republishing must comply with the Apache License 2.0 and retain the original copyright notice, license file, and related notices.",
+            "about.notice_p3": "Please note: DACAT.CC does not charge for the software itself through unofficial channels. Third parties must not impersonate DACAT.CC, remove or hide copyright and license information, or sell this tool under misleading names such as \"official paid version\", \"licensed activation version\", or \"commercial cracked version\".",
+            "about.notice_p4": "If you obtained this tool through a paid third party, please visit the official GitHub repository or DACAT.CC to get the free official version.",
+            "about.notice_website": "Official Website",
+            "about.notice_repo": "Official GitHub",
+            "about.notice_license": "License",
+
+            // V1.0.3新增: MAC-IP 固定映射管理区
+            "section.reservations": "MAC-IP Mapping",
+            "resv.title": "MAC-IP Static Mapping",
+            "resv.subtitle": "Assign a fixed IP for a specific MAC; DHCP matches static mappings first",
+            "resv.add": "Add Mapping",
+            "resv.edit": "Edit",
+            "resv.delete": "Delete",
+            "resv.enable": "Enable",
+            "resv.disable": "Disable",
+            "resv.save": "Save",
+            "resv.cancel": "Cancel",
+            "resv.col_mac": "MAC Address",
+            "resv.col_ip": "Fixed IP",
+            "resv.col_remark": "Remark",
+            "resv.col_enabled": "Status",
+            "resv.col_created": "Created At",
+            "resv.col_actions": "Actions",
+            "resv.empty": "No mappings yet, click \"Add Mapping\" to create one",
+            "resv.form_mac": "MAC Address",
+            "resv.form_ip": "Fixed IP",
+            "resv.form_remark": "Remark (optional)",
+            "resv.form_enabled": "Enable this mapping",
+            "resv.mac_placeholder": "00:11:22:33:44:55 or 00-11-22-33-44-55",
+            "resv.ip_placeholder": "e.g. 192.168.1.100",
+            "resv.remark_placeholder": "Optional remark for identification",
+            "resv.hint": "The fixed IP must be in the same subnet as the selected adapter. Fixed IPs inside the pool are automatically skipped during dynamic allocation.",
+            "resv.status_on": "Enabled",
+            "resv.status_off": "Disabled",
+            "resv.confirm_delete": "Delete this MAC-IP mapping?",
+            "resv.save_fail": "Save failed: ",
+            "resv.load_fail": "Failed to load mappings: ",
+            "resv.alert_mac_required": "Please enter a MAC address",
+            "resv.alert_ip_required": "Please enter a fixed IP address",
+            "resv.running_block": "Cannot modify mappings while the service is running; please stop it first",
+            "resv.total": "Total"
         }
     };
 
@@ -313,7 +405,19 @@
         // V13新增: 日志清空相关错误,英文界面禁止显示"截断日志文件失败"等中文原文
         {zh: "truncate_log_failed", en: "Failed to truncate log file"},
         {zh: "reopen_log_failed", en: "Failed to reopen log file"},
-        {zh: "seek_log_failed", en: "Failed to seek log file"}
+        {zh: "seek_log_failed", en: "Failed to seek log file"},
+        // V1.0.3新增: 固定映射校验相关中文片段翻译,保留 MAC/IP 动态参数
+        {zh: "MAC 地址格式无效", en: "Invalid MAC address format"},
+        {zh: "IP 地址格式无效", en: "Invalid IP address format"},
+        {zh: "MAC 地址重复", en: "Duplicate MAC address"},
+        {zh: "IP 地址重复", en: "Duplicate IP address"},
+        {zh: "固定 IP", en: "The fixed IP"},
+        {zh: "与网卡", en: "and the adapter"},
+        {zh: "不在同一网段", en: "are not in the same subnet"},
+        {zh: "不能等于网卡 IP", en: "cannot equal the adapter IP"},
+        {zh: "不能等于网关 IP", en: "cannot equal the gateway IP"},
+        {zh: "不能是网络地址", en: "cannot be the network address"},
+        {zh: "不能是广播地址", en: "cannot be the broadcast address"}
     ];
 
     // V11新增: 稳定错误码 -> 中英文翻译映射表
@@ -361,7 +465,17 @@
         // V1.0.2新增: 地址池跨网段错误码,前端提供完整中英文文案
         "pool_subnet_mismatch":    {zh: "地址池必须与所选网卡处于同一网段",                    en: "The DHCP pool must be in the same subnet as the selected adapter"},
         // V1.0.2新增: 网关跨网段错误码,前端提供完整中英文文案
-        "gateway_subnet_mismatch": {zh: "网关必须与地址池处于同一网段",                       en: "The gateway must be in the same subnet as the DHCP pool"}
+        "gateway_subnet_mismatch": {zh: "网关必须与地址池处于同一网段",                       en: "The gateway must be in the same subnet as the DHCP pool"},
+        // V1.0.3新增: 固定映射校验错误码,后端 msg 含 MAC/IP 动态参数,翻译保留动态参数
+        "resv_mac_invalid":         {zh: "MAC 地址格式无效",                                  en: "Invalid MAC address format"},
+        "resv_ip_invalid":          {zh: "IP 地址格式无效",                                   en: "Invalid IP address format"},
+        "resv_mac_duplicate":       {zh: "MAC 地址重复",                                      en: "Duplicate MAC address"},
+        "resv_ip_duplicate":        {zh: "IP 地址重复",                                       en: "Duplicate IP address"},
+        "resv_subnet_mismatch":     {zh: "固定 IP 与网卡不在同一网段",                       en: "The fixed IP is not in the same subnet as the adapter"},
+        "resv_conflict_adapter":    {zh: "固定 IP 不能等于网卡 IP",                          en: "The fixed IP cannot equal the adapter IP"},
+        "resv_conflict_gateway":    {zh: "固定 IP 不能等于网关 IP",                          en: "The fixed IP cannot equal the gateway IP"},
+        "resv_conflict_network":    {zh: "固定 IP 不能是网络地址",                           en: "The fixed IP cannot be the network address"},
+        "resv_conflict_broadcast":  {zh: "固定 IP 不能是广播地址",                           en: "The fixed IP cannot be the broadcast address"}
     };
 
     // 当前语言,默认 zh-CN

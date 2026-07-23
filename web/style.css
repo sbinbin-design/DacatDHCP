@@ -340,13 +340,15 @@ html[data-theme="dark"] .icon-sun {
 
 /* ---- 主内容布局: V10 CSS Grid ---- */
 /* 宽屏三列 25/45/30,左状态卡跨两行,中上配置中下租约,右上日志右下安全提示 */
+/* V1.0.3新增: 第三行跨三列布局 MAC-IP 映射管理区 */
 .layout {
     display: grid;
     grid-template-columns: minmax(0, 25fr) minmax(0, 45fr) minmax(0, 30fr);
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto 1fr auto;
     grid-template-areas:
-        "status config  logs"
-        "status leases  security";
+        "status       config  logs"
+        "status       leases  security"
+        "reservations reservations reservations";
     gap: var(--gap-base);
     -webkit-box-align: stretch;
     -ms-flex-align: stretch;
@@ -362,20 +364,23 @@ html[data-theme="dark"] .icon-sun {
 .grid-area-leases { grid-area: leases; }
 .grid-area-logs { grid-area: logs; }
 .grid-area-security { grid-area: security; }
+.grid-area-reservations { grid-area: reservations; } /* V1.0.3新增 */
 
 /* V11: 中等宽度(768-1049px)两列布局,断点从1199下调到1050,使1366×768在125%缩放仍尽量保持三列 */
+/* V1.0.3新增: reservations 跨两列占满第三行 */
 @media (max-width: 1049px) and (min-width: 768px) {
     .layout {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        grid-template-rows: auto auto auto;
+        grid-template-rows: auto auto auto auto;
         grid-template-areas:
-            "status  config"
-            "leases  logs"
-            "security security";
+            "status       config"
+            "leases       logs"
+            "security     security"
+            "reservations reservations";
     }
 }
 
-/* 窄屏(<768px): 单列,顺序: 状态/配置/租约/日志/安全提示 */
+/* 窄屏(<768px): 单列,顺序: 状态/配置/租约/日志/安全提示/固定映射 */
 @media (max-width: 767px) {
     .layout {
         grid-template-columns: minmax(0, 1fr);
@@ -385,7 +390,8 @@ html[data-theme="dark"] .icon-sun {
             "config"
             "leases"
             "logs"
-            "security";
+            "security"
+            "reservations";
     }
 }
 
@@ -1517,6 +1523,37 @@ tbody tr:nth-child(even) {
     text-decoration: underline;
 }
 
+/* 免费声明区块: 使用主题变量适配白/黑主题,移动端自动换行不溢出 */
+.about-notice {
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    border-radius: var(--radius-input);
+    padding: 12px;
+    margin-bottom: 14px;
+}
+
+.about-notice-title {
+    font-size: var(--font-size-base);
+    color: var(--color-warning-text);
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.about-notice-text {
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    line-height: 1.7;
+    margin-bottom: 6px;
+    word-break: break-word;
+}
+
+/* 声明区块内官方来源信息,复用 about-row/about-label/about-link 样式 */
+.about-notice-sources {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--color-warning-border);
+}
+
 /* ---- 窄屏适配 ---- */
 @media (max-width: 767px) {
     .header {
@@ -1617,6 +1654,113 @@ tbody tr:nth-child(even) {
         -ms-flex: 1 1 100%;
         flex: 1 1 100%;
         width: 100%;
+        max-width: 100%;
+    }
+}
+
+/* ---- V1.0.3新增: MAC-IP 固定映射管理区 ---- */
+/* 跨三列布局,表格高度自适应,状态徽章复用主题变量 */
+.card-reservations .table-wrap {
+    max-height: 320px;
+}
+
+#resv-total-count {
+    color: var(--color-primary);
+}
+
+/* 状态徽章: 启用绿色,禁用灰色 */
+.resv-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.resv-badge-on {
+    background: var(--color-footer-badge-bg);
+    color: var(--color-footer-badge-text);
+    border: 1px solid var(--color-footer-badge-border);
+}
+
+.resv-badge-off {
+    background: var(--bg-page);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+}
+
+/* 操作按钮组: 编辑/启用禁用/删除,紧凑排列 */
+.resv-actions {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-wrap: wrap;
+    flex-wrap: wrap;
+    gap: 4px;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+}
+
+.resv-actions .btn-mini {
+    padding: 3px 8px;
+    font-size: var(--font-size-sm);
+}
+
+/* 删除按钮使用危险色 */
+.resv-actions .btn-resv-delete {
+    color: var(--color-danger);
+}
+
+.resv-actions .btn-resv-delete:hover:not(:disabled) {
+    background: var(--color-error-bg);
+    border-color: var(--color-error-border);
+}
+
+/* 备注 cell 内容换行 */
+.resv-remark {
+    word-break: break-all;
+    max-width: 240px;
+}
+
+/* MAC 地址单元格使用等宽字体便于阅读 */
+.resv-mac {
+    font-family: Consolas, "Courier New", monospace;
+    white-space: nowrap;
+}
+
+/* 固定映射弹窗复选框样式(与单选按钮一致) */
+.checkbox-label {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+    -ms-flex-align: center;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    width: auto;
+    font-weight: normal;
+    color: var(--color-text);
+}
+
+.checkbox-label input {
+    cursor: pointer;
+}
+
+/* 弹窗底部按钮组间距 */
+.modal-footer .btn-mini {
+    margin-right: 8px;
+}
+
+/* 移动端: 固定映射表格降高,操作按钮换行 */
+@media (max-width: 767px) {
+    .card-reservations .table-wrap {
+        max-height: 260px;
+    }
+    .resv-remark {
         max-width: 100%;
     }
 }

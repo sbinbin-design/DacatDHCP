@@ -20,14 +20,26 @@ import (
 
 // Config 持久化配置
 type Config struct {
-	AdapterName  string   `json:"adapter_name"`
-	PoolStart    string   `json:"pool_start"`
-	PoolEnd      string   `json:"pool_end"`
-	LeaseMinutes int      `json:"lease_minutes"`
-	WebPort      int      `json:"web_port"`
-	Gateway      string   `json:"gateway"`     // V2新增: 默认网关（可选，空则不下发 Option 3）
-	DNSServers   []string `json:"dns_servers"` // V2新增: DNS 服务器（可选，空则不下发 Option 6）
-	Language     string   `json:"language"`    // 语言: zh-CN/en-US;空或无效时由 main.go 检测 Windows 界面语言,NewAppServer 沿用全局语言
+	AdapterName  string              `json:"adapter_name"`
+	PoolStart    string              `json:"pool_start"`
+	PoolEnd      string              `json:"pool_end"`
+	LeaseMinutes int                 `json:"lease_minutes"`
+	WebPort      int                 `json:"web_port"`
+	Gateway      string              `json:"gateway"`       // V2新增: 默认网关（可选，空则不下发 Option 3）
+	DNSServers   []string            `json:"dns_servers"`   // V2新增: DNS 服务器（可选，空则不下发 Option 6）
+	Language     string              `json:"language"`      // 语言: zh-CN/en-US;空或无效时由 main.go 检测 Windows 界面语言,NewAppServer 沿用全局语言
+	StaticLeases []StaticLeaseConfig `json:"static_leases"` // V1.0.3新增: MAC-IP 固定映射列表
+}
+
+// StaticLeaseConfig 固定 MAC-IP 映射配置项（V1.0.3新增）
+// 持久化到 config.json,不引入数据库;MAC 保存时统一规范为大写冒号格式
+type StaticLeaseConfig struct {
+	MAC       string `json:"mac"`        // MAC 地址,大写冒号格式,如 00:11:22:33:44:55
+	IP        string `json:"ip"`         // IPv4 地址
+	Remark    string `json:"remark"`     // 备注（可选）
+	Enabled   bool   `json:"enabled"`    // 是否启用
+	CreatedAt string `json:"created_at"` // 创建时间（RFC3339）
+	UpdatedAt string `json:"updated_at"` // 更新时间（RFC3339）
 }
 
 // DefaultConfig 返回默认配置
@@ -167,6 +179,7 @@ func (a *AppServer) buildMux() *http.ServeMux {
 	mux.HandleFunc("/api/pool-recommend", a.handlePoolRecommend) // V1修复: 后端计算地址池推荐
 	mux.HandleFunc("/api/version", a.handleVersion)              // 版本信息：读取 internal/version 唯一源
 	mux.HandleFunc("/api/language", a.handleLanguage)            // 语言新增: GET 返回当前语言,PUT 切换语言
+	mux.HandleFunc("/api/reservations", a.handleReservations)    // V1.0.3新增: MAC-IP 固定映射 CRUD
 
 	return mux
 }
@@ -477,6 +490,8 @@ func (a *AppServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		// 语言新增: PUT /api/config 不修改 Language 字段,Language 由 /api/language 独立管理
 		// 在 a.config = cfg 之前保留当前 Language,避免被请求体覆盖为空
 		cfg.Language = a.config.Language
+		// V1.0.3新增: PUT /api/config 不修改 StaticLeases,由 /api/reservations 独立管理
+		cfg.StaticLeases = a.config.StaticLeases
 
 		// V14: 先保存配置到文件,成功后再更新内存配置,禁止写入失败仍更新内存或返回 ok
 		// 临时设置 a.config 供 saveConfig 序列化,失败则恢复原值
@@ -592,6 +607,17 @@ func (a *AppServer) handleStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, dnsCode, err.Error())
 		return
 	}
+
+	// V1.0.3新增: 启动前校验固定映射（MAC 重复/IP 重复/跨网段/与网卡网关冲突）
+	// V1.0.3修复: 阻断性校验仅对 enabled=true 生效,enabled=false 不阻止启动
+	if code, err := validateReservationsForStart(a.config.StaticLeases, adapterIP, subnetMask, gatewayIP); err != nil {
+		a.mu.Unlock()
+		writeError(w, http.StatusBadRequest, code, err.Error())
+		return
+	}
+
+	// V1.0.3新增: 将启用的固定映射传递给 DHCP 服务器
+	a.dhcpSrv.SetStaticLeases(buildDHCPStaticLeases(a.config.StaticLeases))
 
 	// 启动 DHCP 服务（V1修复: 地址池校验已移入 NewLeaseStore）
 	// V2新增: 传入网关/DNS（已校验），为空则不下发 Option 3/6
@@ -1296,6 +1322,16 @@ const (
 	errCodeConfigSaveFailed      = "config_save_failed"      // V14新增: 配置写入文件失败
 	errCodePoolSubnetMismatch    = "pool_subnet_mismatch"    // V1.0.2新增: 地址池与网卡不在同一子网
 	errCodeGatewaySubnetMismatch = "gateway_subnet_mismatch" // V1.0.2新增: 网关与地址池不在同一子网
+	// V1.0.3新增: 固定映射校验错误码
+	errCodeResvMACInvalid        = "resv_mac_invalid"        // MAC 地址格式无效
+	errCodeResvIPInvalid         = "resv_ip_invalid"         // IP 地址格式无效
+	errCodeResvMACDuplicate      = "resv_mac_duplicate"      // MAC 地址重复
+	errCodeResvIPDuplicate       = "resv_ip_duplicate"       // IP 地址重复
+	errCodeResvSubnetMismatch    = "resv_subnet_mismatch"    // 固定 IP 与网卡不在同一网段
+	errCodeResvConflictAdapter   = "resv_conflict_adapter"   // 固定 IP 等于网卡 IP
+	errCodeResvConflictGateway   = "resv_conflict_gateway"   // 固定 IP 等于网关 IP
+	errCodeResvConflictNetwork   = "resv_conflict_network"   // 固定 IP 等于网络地址
+	errCodeResvConflictBroadcast = "resv_conflict_broadcast" // 固定 IP 等于广播地址
 )
 
 // writeError V11新增: 写入带稳定错误码的 JSON 响应

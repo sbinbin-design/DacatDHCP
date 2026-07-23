@@ -48,19 +48,21 @@ type stopRequest struct {
 // V3修复: 增加stopped标志防止doStop被重复调用
 // V9修复: stopReqCh改为chan stopRequest，携带明确的停止类型
 // V2新增: gateway/dnsServers 作为不可变运行配置，运行中不得读取共享配置
+// V1.0.3新增: staticLeases 作为不可变运行配置，仅含 enabled=true 的映射
 type runningInstance struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	conn        net.PacketConn
-	wg          sync.WaitGroup
-	adapterName string
-	adapterIP   net.IP
-	gateway     net.IP           // V2新增: 启动时校验后的网关（不可变，空表示不下发）
-	dnsServers  []net.IP         // V2新增: 启动时校验后的DNS（不可变，空表示不下发）
-	stopReason  string           // 停止原因（正常停止或网卡异常）
-	stopReqCh   chan stopRequest // 停止请求通道（V9: 改为 stopRequest 携带停止类型）
-	stopDoneCh  chan struct{}    // 停止完成信号（V2: 从Server移入实例）
-	stopped     bool             // V3: 防止doStop对同一实例重复执行
+	ctx          context.Context
+	cancel       context.CancelFunc
+	conn         net.PacketConn
+	wg           sync.WaitGroup
+	adapterName  string
+	adapterIP    net.IP
+	gateway      net.IP           // V2新增: 启动时校验后的网关（不可变，空表示不下发）
+	dnsServers   []net.IP         // V2新增: 启动时校验后的DNS（不可变，空表示不下发）
+	staticLeases []StaticLease    // V1.0.3新增: 启用的固定映射（不可变，运行中不读取共享配置）
+	stopReason   string           // 停止原因（正常停止或网卡异常）
+	stopReqCh    chan stopRequest // 停止请求通道（V9: 改为 stopRequest 携带停止类型）
+	stopDoneCh   chan struct{}    // 停止完成信号（V2: 从Server移入实例）
+	stopped      bool             // V3: 防止doStop对同一实例重复执行
 }
 
 // Server DHCP 服务器
@@ -79,6 +81,10 @@ type Server struct {
 	statusErr   string
 	startedAt   time.Time // V10新增: 服务启动时间,供 Status 返回真实运行时间,禁止前端伪造
 
+	// V1.0.3新增: 待传入运行实例的固定映射,由 AppServer.handleStart 调用 SetStaticLeases 设置
+	// Start 时复制到 runningInstance 作为不可变运行配置
+	pendingStaticLeases []StaticLease
+
 	// V2修复: stopReqCh/stopDoneCh已移入runningInstance，旧实例不得关闭新实例通道
 
 	// V1修复: 可注入的连接创建函数（生命周期测试用）
@@ -87,6 +93,13 @@ type Server struct {
 	// V3: DHCP自动停止时的回调（用于通知托盘更新状态）
 	// V8: 回调接收停止原因，供测试断言
 	onAutoStop func(reason string)
+}
+
+// StaticLease 固定 MAC-IP 映射（V1.0.3新增）
+// 由 server 包从配置转换而来,存入 runningInstance 作为不可变运行配置
+type StaticLease struct {
+	MAC net.HardwareAddr
+	IP  net.IP
 }
 
 // NewServer 创建 DHCP 服务器实例
@@ -110,6 +123,15 @@ func (s *Server) SetOnAutoStop(f func(reason string)) {
 // SetCreateConnFunc 设置连接创建函数（V6: 供 AppServer 测试注入）
 func (s *Server) SetCreateConnFunc(f func(bindIP net.IP) (net.PacketConn, error)) {
 	s.createConnFunc = f
+}
+
+// SetStaticLeases 设置固定映射列表（V1.0.3新增）
+// 必须在 Start 之前调用;Start 时复制到 runningInstance 作为不可变运行配置
+// 仅含 enabled=true 的映射,由 server.buildDHCPStaticLeases 过滤
+func (s *Server) SetStaticLeases(leases []StaticLease) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pendingStaticLeases = leases
 }
 
 // Start 启动 DHCP 服务
@@ -187,6 +209,16 @@ func (s *Server) Start(adapterName string, adapterIP net.IP, subnetMask net.IPMa
 		return err
 	}
 
+	// V1.0.3新增: 将固定映射中处于动态池内的 IP 加入排除集合
+	// 动态分配时跳过这些保留 IP,避免与固定映射冲突;池外的固定 IP 不影响动态分配
+	var reservedIPs []net.IP
+	for _, sl := range s.pendingStaticLeases {
+		if sl.IP != nil {
+			reservedIPs = append(reservedIPs, sl.IP)
+		}
+	}
+	s.leases.AddReservedIPs(reservedIPs)
+
 	// 创建 UDP 套接字
 	// V1修复: 优先使用注入的 createConnFunc（测试用），否则使用默认实现
 	var conn net.PacketConn
@@ -201,15 +233,17 @@ func (s *Server) Start(adapterName string, adapterIP net.IP, subnetMask net.IPMa
 
 	// V1修复: 创建独立运行实例
 	// V2新增: gateway/dnsServers 存入实例作为不可变运行配置
+	// V1.0.3新增: staticLeases 存入实例作为不可变运行配置
 	ctx, cancel := context.WithCancel(context.Background())
 	inst := &runningInstance{
-		ctx:         ctx,
-		cancel:      cancel,
-		conn:        conn,
-		adapterName: adapterName,
-		adapterIP:   adapterIP.To4(),
-		gateway:     gw,
-		dnsServers:  dnsList,
+		ctx:          ctx,
+		cancel:       cancel,
+		conn:         conn,
+		adapterName:  adapterName,
+		adapterIP:    adapterIP.To4(),
+		gateway:      gw,
+		dnsServers:   dnsList,
+		staticLeases: s.pendingStaticLeases,
 	}
 	s.instance = inst
 
@@ -537,7 +571,24 @@ func (s *Server) responseTarget(pkt *Packet) *net.UDPAddr {
 	return &net.UDPAddr{IP: net.IPv4(255, 255, 255, 255), Port: 68}
 }
 
+// findStaticLease 按客户端 MAC 查找启用的固定映射（V1.0.3新增）
+// 返回匹配的固定 IP;未命中返回 nil
+// inst.staticLeases 为不可变运行配置,无需加锁
+func (s *Server) findStaticLease(inst *runningInstance, mac net.HardwareAddr) net.IP {
+	if mac == nil || len(mac) == 0 {
+		return nil
+	}
+	macStr := mac.String() // net.HardwareAddr.String() 返回小写冒号格式
+	for _, sl := range inst.staticLeases {
+		if sl.MAC.String() == macStr {
+			return sl.IP
+		}
+	}
+	return nil
+}
+
 // handleDiscover 处理 DHCP Discover
+// V1.0.3新增: 先按客户端 MAC 查找 enabled 固定映射;命中则优先分配绑定 IP,未命中走原逻辑
 func (s *Server) handleDiscover(pkt *Packet) {
 	clientID := pkt.ClientID()
 	mac := pkt.CHAddr
@@ -545,21 +596,35 @@ func (s *Server) handleDiscover(pkt *Packet) {
 
 	s.logFunc("DISCOVER from %s%s", mac.String(), hostSuffix(hostname))
 
-	offeredIP, err := s.leases.CreatePendingOffer(mac, clientID, hostname)
-	if err != nil {
-		if err == ErrPoolExhausted {
-			s.logFunc("地址池已耗尽，无法响应 DISCOVER from %s", mac.String())
-		}
-		return
-	}
-
-	// V2新增: 先捕获实例，读取不可变运行配置（网关/DNS）
+	// 先捕获实例,读取不可变运行配置（网关/DNS/固定映射）
 	s.mu.RLock()
 	inst := s.instance
 	s.mu.RUnlock()
 
 	if inst == nil || inst.conn == nil {
 		return
+	}
+
+	var offeredIP net.IP
+	var err error
+
+	// V1.0.3: 优先匹配固定映射
+	if staticIP := s.findStaticLease(inst, mac); staticIP != nil {
+		offeredIP, err = s.leases.CreateStaticOffer(mac, clientID, hostname, staticIP)
+		if err != nil {
+			s.logFunc("固定映射 IP 分配失败: %s (%s)", staticIP.String(), mac.String())
+			return
+		}
+		s.logFunc("Static lease matched: %s -> %s", mac.String(), offeredIP.String())
+	} else {
+		// 未命中固定映射,走原逻辑从地址池分配
+		offeredIP, err = s.leases.CreatePendingOffer(mac, clientID, hostname)
+		if err != nil {
+			if err == ErrPoolExhausted {
+				s.logFunc("地址池已耗尽，无法响应 DISCOVER from %s", mac.String())
+			}
+			return
+		}
 	}
 
 	leaseTime := uint32(s.leaseTime.Seconds())
@@ -589,6 +654,7 @@ func (s *Server) handleDiscover(pkt *Packet) {
 }
 
 // handleRequest 处理 DHCP Request
+// V1.0.3新增: 先按客户端 MAC 查找固定映射;命中则只接受请求固定 IP,否则走原逻辑
 func (s *Server) handleRequest(pkt *Packet) {
 	mac := pkt.CHAddr
 	hostname := pkt.HostName()
@@ -611,19 +677,7 @@ func (s *Server) handleRequest(pkt *Packet) {
 		return
 	}
 
-	lease, err := s.leases.ConfirmLease(mac, clientID, hostname, requestedIP)
-	if err != nil {
-		reason := "请求的 IP 不可用"
-		if err == ErrPoolExhausted {
-			reason = "地址池已耗尽"
-		}
-		s.sendNAK(pkt, mac, reason)
-		return
-	}
-
-	leaseTime := uint32(s.leaseTime.Seconds())
-
-	// V2新增: 先捕获实例，读取不可变运行配置（网关/DNS）
+	// 先捕获实例,读取不可变运行配置（网关/DNS/固定映射）
 	s.mu.RLock()
 	inst := s.instance
 	s.mu.RUnlock()
@@ -631,6 +685,37 @@ func (s *Server) handleRequest(pkt *Packet) {
 	if inst == nil || inst.conn == nil {
 		return
 	}
+
+	var lease *Lease
+	var err error
+
+	// V1.0.3: 优先匹配固定映射
+	if staticIP := s.findStaticLease(inst, mac); staticIP != nil {
+		// 固定映射命中: 请求的 IP 必须等于固定 IP,否则 NAK
+		if !requestedIP.Equal(staticIP) {
+			s.sendNAK(pkt, mac, "固定映射要求请求指定 IP")
+			return
+		}
+		lease, err = s.leases.ConfirmStaticLease(mac, clientID, hostname, requestedIP, staticIP)
+		if err != nil {
+			s.sendNAK(pkt, mac, "固定映射 IP 不可用")
+			return
+		}
+		s.logFunc("Static lease matched: %s -> %s", mac.String(), lease.IP.String())
+	} else {
+		// 未命中固定映射,走原逻辑
+		lease, err = s.leases.ConfirmLease(mac, clientID, hostname, requestedIP)
+		if err != nil {
+			reason := "请求的 IP 不可用"
+			if err == ErrPoolExhausted {
+				reason = "地址池已耗尽"
+			}
+			s.sendNAK(pkt, mac, reason)
+			return
+		}
+	}
+
+	leaseTime := uint32(s.leaseTime.Seconds())
 
 	response := BuildPacket(
 		MsgTypeACK,
